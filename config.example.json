@@ -1,0 +1,10 @@
+{
+  "note": "All configuration is via environment variables. See README for details.",
+  "env_vars": {
+    "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account.json",
+    "GTM_ACCOUNT_ID": "your-gtm-account-id",
+    "GTM_CONTAINER_ID": "your-gtm-container-id",
+    "GA4_PROPERTY_ID": "your-ga4-property-id",
+    "MCP_SERVER_NAME": "my-gtm-server"
+  }
+}

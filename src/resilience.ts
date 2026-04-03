@@ -1,0 +1,54 @@
+import { retry, circuitBreaker, wrap, handleAll, timeout, TimeoutStrategy, ExponentialBackoff, ConsecutiveBreaker } from "cockatiel";
+import pino from "pino";
+
+export const logger = pino({
+  level: process.env.LOG_LEVEL || "info",
+  ...(process.env.NODE_ENV !== "test" && {
+    transport: { target: "pino-pretty", options: { colorize: true, singleLine: true, translateTime: "SYS:standard" } },
+  }),
+});
+
+const MAX_RESPONSE_SIZE = 200_000;
+
+export function safeResponse<T>(data: T, context: string): T {
+  const jsonStr = JSON.stringify(data);
+  const sizeBytes = Buffer.byteLength(jsonStr, "utf-8");
+  if (sizeBytes <= MAX_RESPONSE_SIZE) return data;
+
+  logger.warn({ sizeBytes, maxSize: MAX_RESPONSE_SIZE, context }, "Response exceeds size limit, truncating");
+
+  if (Array.isArray(data)) return (data as any[]).slice(0, Math.max(1, Math.floor((data as any[]).length * 0.5))) as T;
+
+  if (typeof data === "object" && data !== null) {
+    const obj = data as Record<string, any>;
+    for (const key of ["items", "results", "data", "rows", "tags", "triggers", "variables"]) {
+      if (Array.isArray(obj[key])) {
+        obj[key] = obj[key].slice(0, Math.max(1, Math.floor(obj[key].length * 0.5)));
+        if ("count" in obj) obj.count = obj[key].length;
+        if ("row_count" in obj) obj.row_count = obj[key].length;
+        obj.truncated = true;
+        return obj as T;
+      }
+    }
+  }
+  return data;
+}
+
+const backoff = new ExponentialBackoff({ initialDelay: 100, maxDelay: 5_000 });
+const retryPolicy = retry(handleAll, { maxAttempts: 3, backoff });
+const circuitBreakerPolicy = circuitBreaker(handleAll, { halfOpenAfter: 60_000, breaker: new ConsecutiveBreaker(5) });
+const timeoutPolicy = timeout(30_000, TimeoutStrategy.Cooperative);
+const policy = wrap(timeoutPolicy, circuitBreakerPolicy, retryPolicy);
+
+export async function withResilience<T>(fn: () => Promise<T>, operationName: string): Promise<T> {
+  try {
+    logger.debug({ operation: operationName }, "Starting API call");
+    const result = await policy.execute(() => fn());
+    logger.debug({ operation: operationName }, "API call succeeded");
+    return result;
+  } catch (err) {
+    const error = err instanceof Error ? err : new Error(String(err));
+    logger.error({ operation: operationName, error: error.message, stack: error.stack }, "API call failed after retries");
+    throw error;
+  }
+}
