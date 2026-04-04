@@ -1,0 +1,24 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.mharnett/gtm-ga4",
+  "description": "GTM + GA4 MCP: tag management, consent auditing, workspace versioning, reports.",
+  "repository": {
+    "url": "https://github.com/mharnett/mcp-gtm-ga4",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "mcp-gtm-ga4",
+      "version": "1.0.0",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        { "name": "GOOGLE_APPLICATION_CREDENTIALS", "description": "Path to service account JSON credentials file", "isRequired": true, "isSecret": false },
+        { "name": "GTM_ACCOUNT_ID", "description": "GTM account ID", "isRequired": true, "isSecret": false },
+        { "name": "GTM_CONTAINER_ID", "description": "GTM container ID", "isRequired": true, "isSecret": false },
+        { "name": "GA4_PROPERTY_ID", "description": "GA4 property ID (numeric)", "isRequired": false, "isSecret": false }
+      ]
+    }
+  ]
+}
