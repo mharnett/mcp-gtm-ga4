@@ -3,7 +3,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { google, tagmanager_v2 } from "googleapis";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
@@ -12,6 +12,134 @@ import { GtmAuthError, GtmRateLimitError, GtmServiceError, SafetyError, classify
 import { classifyTag } from "./consent.js";
 import { tools } from "./tools.js";
 import { withResilience, safeResponse, logger } from "./resilience.js";
+import { createServer } from "http";
+import { URL } from "url";
+
+// ============================================
+// AUTH SUBCOMMAND
+// ============================================
+
+const OAUTH_SCOPES = [
+  "https://www.googleapis.com/auth/tagmanager.edit.containers",
+  "https://www.googleapis.com/auth/tagmanager.edit.containerversions",
+  "https://www.googleapis.com/auth/tagmanager.readonly",
+  "https://www.googleapis.com/auth/analytics.readonly",
+  "https://www.googleapis.com/auth/analytics.edit",
+];
+
+// OAuth client for the "auth" subcommand.
+// Set via env vars or pass a GCP OAuth keys JSON file via --keys.
+const OAUTH_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
+const OAUTH_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+
+async function runAuth(): Promise<void> {
+  const args = process.argv.slice(3); // after "auth"
+  let outputPath = "";
+  let keysPath = "";
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--output" || args[i] === "-o") outputPath = args[++i];
+    if (args[i] === "--keys" || args[i] === "-k") keysPath = args[++i];
+  }
+  if (!outputPath) {
+    console.error("Usage: node dist/index.js auth --output <path> [--keys <oauth-keys.json>]");
+    console.error("Example: node dist/index.js auth --output ~/.config/google-oauth/bluerose-gtm.json --keys ~/.config/google-oauth/gcp-oauth.keys.json");
+    console.error("\nOAuth client credentials can be provided via:");
+    console.error("  --keys <file>          GCP OAuth keys JSON (has installed.client_id/client_secret)");
+    console.error("  GOOGLE_CLIENT_ID       Environment variable");
+    console.error("  GOOGLE_CLIENT_SECRET   Environment variable");
+    process.exit(1);
+  }
+
+  // Resolve OAuth client credentials: --keys file > env vars
+  let clientId = OAUTH_CLIENT_ID;
+  let clientSecret = OAUTH_CLIENT_SECRET;
+  if (keysPath) {
+    try {
+      const keysJson = JSON.parse(readFileSync(keysPath, "utf-8"));
+      const installed = keysJson.installed || keysJson.web;
+      if (!installed?.client_id || !installed?.client_secret) {
+        console.error("Keys file must contain installed.client_id and installed.client_secret");
+        process.exit(1);
+      }
+      clientId = installed.client_id;
+      clientSecret = installed.client_secret;
+    } catch (err: any) {
+      console.error(`Failed to read keys file: ${err.message}`);
+      process.exit(1);
+    }
+  }
+  if (!clientId || !clientSecret) {
+    console.error("OAuth client credentials required. Provide --keys <file> or set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET env vars.");
+    process.exit(1);
+  }
+
+  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, "http://localhost:8095/oauth2callback");
+
+  const authUrl = oauth2Client.generateAuthUrl({
+    access_type: "offline",
+    scope: OAUTH_SCOPES,
+    prompt: "consent", // Force consent to ensure refresh token is issued
+  });
+
+  // Start local server to catch the redirect
+  return new Promise((resolve, reject) => {
+    const srv = createServer(async (req, res) => {
+      const url = new URL(req.url!, `http://localhost:8095`);
+      if (url.pathname !== "/oauth2callback") {
+        res.writeHead(404);
+        res.end("Not found");
+        return;
+      }
+      const code = url.searchParams.get("code");
+      if (!code) {
+        res.writeHead(400);
+        res.end("No authorization code received");
+        return;
+      }
+      try {
+        const { tokens } = await oauth2Client.getToken(code);
+        const credentialJson = {
+          type: "authorized_user",
+          client_id: clientId,
+          client_secret: clientSecret,
+          refresh_token: tokens.refresh_token,
+        };
+
+        // Ensure output directory exists
+        const outDir = dirname(outputPath);
+        if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
+
+        writeFileSync(outputPath, JSON.stringify(credentialJson, null, 2));
+        console.log(`\n✓ Credentials saved to: ${outputPath}`);
+        console.log(`  Use this in your .mcp.json as GOOGLE_APPLICATION_CREDENTIALS`);
+
+        res.writeHead(200, { "Content-Type": "text/html" });
+        res.end("<h2>Authentication successful!</h2><p>You can close this tab and return to your terminal.</p>");
+        srv.close();
+        resolve();
+      } catch (err: any) {
+        console.error("Token exchange failed:", err.message);
+        res.writeHead(500);
+        res.end("Token exchange failed: " + err.message);
+        srv.close();
+        reject(err);
+      }
+    });
+
+    srv.listen(8095, () => {
+      console.log("\nOpening browser for Google authentication...");
+      console.log(`If the browser doesn't open, visit:\n${authUrl}\n`);
+      // Open browser cross-platform
+      const open = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+      import("child_process").then(cp => cp.exec(`${open} "${authUrl}"`));
+    });
+  });
+}
+
+// Handle auth subcommand before anything else
+if (process.argv[2] === "auth") {
+  runAuth().then(() => process.exit(0)).catch(() => process.exit(1));
+} else {
 
 // Log build fingerprint
 try {
@@ -60,6 +188,7 @@ class GtmGa4Manager {
     if (!this.dataClient) {
       const opts: any = {};
       if (CREDS_FILE) opts.keyFile = CREDS_FILE;
+      opts.scopes = ["https://www.googleapis.com/auth/analytics.readonly"];
       this.dataClient = new BetaAnalyticsDataClient(opts);
     }
     return this.dataClient;
@@ -69,6 +198,10 @@ class GtmGa4Manager {
     if (!this.adminClient) {
       const opts: any = {};
       if (CREDS_FILE) opts.keyFile = CREDS_FILE;
+      opts.scopes = [
+        "https://www.googleapis.com/auth/analytics.readonly",
+        "https://www.googleapis.com/auth/analytics.edit",
+      ];
       this.adminClient = new AnalyticsAdminServiceClient(opts);
     }
     return this.adminClient;
@@ -354,3 +487,5 @@ async function main() {
 }
 
 main().catch(console.error);
+
+} // end else (non-auth mode)
