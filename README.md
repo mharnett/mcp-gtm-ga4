@@ -18,7 +18,7 @@ npm install mcp-gtm-ga4
 Or clone and build:
 
 ```bash
-git clone https://github.com/drak-marketing/mcp-gtm-ga4.git
+git clone https://github.com/mharnett/mcp-gtm-ga4.git
 cd mcp-gtm-ga4
 npm install
 npm run build
