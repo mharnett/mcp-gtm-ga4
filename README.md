@@ -4,7 +4,7 @@ MCP server for Google Tag Manager and GA4 -- tag management, consent auditing, w
 
 ## Features
 
-- **13 tools** spanning GTM workspace management (tags, triggers, variables), consent compliance auditing, workspace preview/versioning, and GA4 reporting
+- **14 tools** spanning GTM workspace management (tags, triggers, variables), consent compliance auditing, workspace preview/versioning, and GA4 reporting
 - **Sandbox safety** -- all write operations verify they target the resolved workspace, refusing to write to non-sandbox workspaces
 - **Multi-client support** -- configure per-client via environment variables
 - **Auto-detects Default Workspace ID** -- no need to manually specify workspace IDs unless using a custom sandbox

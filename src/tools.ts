@@ -1,6 +1,8 @@
 import { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 export const tools: Tool[] = [
+  // ── Health / Context ──
+  { name: "gtm_get_client_context", description: "Health check and status overview. Returns GTM container path, workspace ID, GA4 property ID, and server version. Use this to verify connectivity.", inputSchema: { type: "object", properties: {} } },
   // ── GTM Tools ──
   { name: "gtm_list_tags", description: "List all tags in the sandbox GTM workspace with name, type, consent status, and firing triggers.", inputSchema: { type: "object", properties: {} } },
   { name: "gtm_get_tag", description: "Get full details of a single tag by ID from the sandbox workspace.", inputSchema: { type: "object", properties: { tag_id: { type: "string", description: "The tag ID" } }, required: ["tag_id"] } },

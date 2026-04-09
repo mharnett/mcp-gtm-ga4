@@ -1,7 +1,7 @@
 {
   "name": "mcp-gtm-ga4",
   "mcpName": "io.github.mharnett/gtm-ga4",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "MCP server for Google Tag Manager + GA4 with sandbox safety, consent auditing, and multi-client support.",
   "main": "dist/index.js",
   "bin": {

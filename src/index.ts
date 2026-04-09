@@ -4,7 +4,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
-import { join, dirname } from "path";
+import { join, dirname, resolve, isAbsolute } from "path";
 import { google, tagmanager_v2 } from "googleapis";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
 import { AnalyticsAdminServiceClient } from "@google-analytics/admin";
@@ -159,6 +159,12 @@ try {
   console.error(`[build] ${__cliPkg.name}@${__cliPkg.version} (dev mode)`);
 }
 
+// Version safety: warn if running a deprecated or dangerously old version
+const __minimumSafeVersion = "1.0.5"; // minimum version with input sanitization
+if (__cliPkg.version < __minimumSafeVersion) {
+  console.error(`[WARNING] Running deprecated version ${__cliPkg.version}. Minimum safe version is ${__minimumSafeVersion}. Please upgrade.`);
+}
+
 // CLI flags
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
   console.error(`${__cliPkg.name} v${__cliPkg.version}\n`);
@@ -181,11 +187,22 @@ if (process.argv.includes("--version") || process.argv.includes("-v")) {
 
 const GTM_ACCOUNT_ID = envTrimmed("GTM_ACCOUNT_ID");
 const GTM_CONTAINER_ID = envTrimmed("GTM_CONTAINER_ID");
+
+// Validate required config (see config.example.json for setup instructions)
+if (!GTM_ACCOUNT_ID || !GTM_CONTAINER_ID) {
+  throw new Error(
+    "Missing required GTM configuration. Set these env vars:\n" +
+    "  GTM_ACCOUNT_ID, GTM_CONTAINER_ID, GOOGLE_APPLICATION_CREDENTIALS\n" +
+    "  See config.example.json for example configuration."
+  );
+}
 const GTM_CONTAINER_PATH = `accounts/${GTM_ACCOUNT_ID}/containers/${GTM_CONTAINER_ID}`;
 const GTM_WORKSPACE_ID_OVERRIDE = envTrimmed("GTM_SANDBOX_WORKSPACE_ID");
 const GA4_PROPERTY_ID = envTrimmed("GA4_PROPERTY_ID");
 const SERVER_NAME = process.env.MCP_SERVER_NAME || "neon-one-gtm";
-const CREDS_FILE = envTrimmed("GOOGLE_APPLICATION_CREDENTIALS");
+// Resolve relative credential paths to absolute (CWD is unpredictable in MCP hosts)
+const __rawCredsFile = envTrimmed("GOOGLE_APPLICATION_CREDENTIALS");
+const CREDS_FILE = __rawCredsFile && !isAbsolute(__rawCredsFile) ? resolve(__rawCredsFile) : __rawCredsFile;
 
 // ============================================
 // GTM + GA4 MANAGER
@@ -469,6 +486,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
   try {
     switch (name) {
+      case "gtm_get_client_context": return ok({
+        server: __cliPkg.name,
+        version: __cliPkg.version,
+        gtm_container_path: GTM_CONTAINER_PATH,
+        gtm_workspace_id: GTM_WORKSPACE_ID_OVERRIDE || "auto-detect",
+        ga4_property_id: GA4_PROPERTY_ID || "not configured",
+        status: "healthy",
+      });
       case "gtm_list_tags": return ok(await manager.listTags());
       case "gtm_get_tag": return ok(await manager.getTag(args?.tag_id as string));
       case "gtm_update_tag": return ok(await manager.updateTag(args?.tag_id as string, args?.updates_json as string));
