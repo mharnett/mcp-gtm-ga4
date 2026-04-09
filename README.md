@@ -70,6 +70,8 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa.json \
 npx mcp-gtm-ga4
 ```
 
+**Claude Desktop:** Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows).
+
 ## Safety
 
 ### Workspace sandbox protection
@@ -113,15 +115,15 @@ This prevents accidental production changes when the MCP server is configured ag
 
 | Tool | Description |
 |---|---|
-| `ga4_run_report` | Run a GA4 report with dimensions, metrics, date range, and filters |
-| `ga4_realtime_report` | Run a GA4 realtime report (last 30 minutes) |
+| `gtm_ga4_run_report` | Run a GA4 report with dimensions, metrics, date range, and filters |
+| `gtm_ga4_realtime_report` | Run a GA4 realtime report (last 30 minutes) |
 
 ### GA4 Admin
 
 | Tool | Description |
 |---|---|
-| `ga4_list_custom_dimensions` | List all custom dimensions for the property |
-| `ga4_create_custom_dimension` | Create a new custom dimension |
+| `gtm_ga4_list_custom_dimensions` | List all custom dimensions for the property |
+| `gtm_ga4_create_custom_dimension` | Create a new custom dimension |
 
 ## Architecture
 
