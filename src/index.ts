@@ -110,8 +110,8 @@ async function runAuth(): Promise<void> {
         if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 
         writeFileSync(outputPath, JSON.stringify(credentialJson, null, 2));
-        console.log(`\n✓ Credentials saved to: ${outputPath}`);
-        console.log(`  Use this in your .mcp.json as GOOGLE_APPLICATION_CREDENTIALS`);
+        console.error(`\n✓ Credentials saved to: ${outputPath}`);
+        console.error(`  Use this in your .mcp.json as GOOGLE_APPLICATION_CREDENTIALS`);
 
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end("<h2>Authentication successful!</h2><p>You can close this tab and return to your terminal.</p>");
@@ -127,8 +127,8 @@ async function runAuth(): Promise<void> {
     });
 
     srv.listen(8095, () => {
-      console.log("\nOpening browser for Google authentication...");
-      console.log(`If the browser doesn't open, visit:\n${authUrl}\n`);
+      console.error("\nOpening browser for Google authentication...");
+      console.error(`If the browser doesn't open, visit:\n${authUrl}\n`);
       // Open browser cross-platform
       const open = process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
       import("child_process").then(cp => cp.exec(`${open} "${authUrl}"`));
@@ -141,27 +141,31 @@ if (process.argv[2] === "auth") {
   runAuth().then(() => process.exit(0)).catch(() => process.exit(1));
 } else {
 
+// CLI package info
+const __cliPkg = JSON.parse(readFileSync(join(dirname(new URL(import.meta.url).pathname), "..", "package.json"), "utf-8"));
+
 // Log build fingerprint
 try {
   const d = dirname(new URL(import.meta.url).pathname);
   const bi = JSON.parse(readFileSync(join(d, "build-info.json"), "utf-8"));
   console.error(`[build] SHA: ${bi.sha} (${bi.builtAt})`);
-} catch { /* dev mode */ }
+} catch {
+  console.error(`[build] ${__cliPkg.name}@${__cliPkg.version} (dev mode)`);
+}
 
 // CLI flags
-const __cliPkg = JSON.parse(readFileSync(join(dirname(new URL(import.meta.url).pathname), "..", "package.json"), "utf-8"));
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.log(`${__cliPkg.name} v${__cliPkg.version}\n`);
-  console.log(`Usage: ${__cliPkg.name} [options]\n`);
-  console.log("MCP server communicating via stdio. Configure in your .mcp.json.\n");
-  console.log("Options:");
-  console.log("  --help, -h       Show this help message");
-  console.log("  --version, -v    Show version number");
-  console.log(`\nDocumentation: https://github.com/mharnett/mcp-gtm-ga4`);
+  console.error(`${__cliPkg.name} v${__cliPkg.version}\n`);
+  console.error(`Usage: ${__cliPkg.name} [options]\n`);
+  console.error("MCP server communicating via stdio. Configure in your .mcp.json.\n");
+  console.error("Options:");
+  console.error("  --help, -h       Show this help message");
+  console.error("  --version, -v    Show version number");
+  console.error(`\nDocumentation: https://github.com/mharnett/mcp-gtm-ga4`);
   process.exit(0);
 }
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
-  console.log(__cliPkg.version);
+  console.error(__cliPkg.version);
   process.exit(0);
 }
 
@@ -509,6 +513,10 @@ process.on("SIGTERM", () => {
 process.on("SIGINT", () => {
   console.error("[shutdown] SIGINT received, exiting");
   process.exit(0);
+});
+
+process.on("SIGPIPE", () => {
+  // Client disconnected -- expected during shutdown
 });
 
 main().catch(console.error);
