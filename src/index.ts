@@ -27,10 +27,16 @@ const OAUTH_SCOPES = [
   "https://www.googleapis.com/auth/analytics.edit",
 ];
 
+// ============================================
+// ENV VAR TRIMMING
+// ============================================
+
+const envTrimmed = (key: string): string => (process.env[key] || "").trim().replace(/^["']|["']$/g, "");
+
 // OAuth client for the "auth" subcommand.
 // Set via env vars or pass a GCP OAuth keys JSON file via --keys.
-const OAUTH_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || "";
-const OAUTH_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || "";
+const OAUTH_CLIENT_ID = envTrimmed("GOOGLE_CLIENT_ID");
+const OAUTH_CLIENT_SECRET = envTrimmed("GOOGLE_CLIENT_SECRET");
 
 async function runAuth(): Promise<void> {
   const args = process.argv.slice(3); // after "auth"
@@ -173,13 +179,13 @@ if (process.argv.includes("--version") || process.argv.includes("-v")) {
 // CONFIGURATION (all via env vars)
 // ============================================
 
-const GTM_ACCOUNT_ID = process.env.GTM_ACCOUNT_ID || "";
-const GTM_CONTAINER_ID = process.env.GTM_CONTAINER_ID || "";
+const GTM_ACCOUNT_ID = envTrimmed("GTM_ACCOUNT_ID");
+const GTM_CONTAINER_ID = envTrimmed("GTM_CONTAINER_ID");
 const GTM_CONTAINER_PATH = `accounts/${GTM_ACCOUNT_ID}/containers/${GTM_CONTAINER_ID}`;
-const GTM_WORKSPACE_ID_OVERRIDE = process.env.GTM_SANDBOX_WORKSPACE_ID || "";
-const GA4_PROPERTY_ID = process.env.GA4_PROPERTY_ID || "";
+const GTM_WORKSPACE_ID_OVERRIDE = envTrimmed("GTM_SANDBOX_WORKSPACE_ID");
+const GA4_PROPERTY_ID = envTrimmed("GA4_PROPERTY_ID");
 const SERVER_NAME = process.env.MCP_SERVER_NAME || "neon-one-gtm";
-const CREDS_FILE = process.env.GOOGLE_APPLICATION_CREDENTIALS || "";
+const CREDS_FILE = envTrimmed("GOOGLE_APPLICATION_CREDENTIALS");
 
 // ============================================
 // GTM + GA4 MANAGER
@@ -517,6 +523,10 @@ process.on("SIGINT", () => {
 
 process.on("SIGPIPE", () => {
   // Client disconnected -- expected during shutdown
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("[error] Unhandled promise rejection:", reason);
 });
 
 main().catch(console.error);
