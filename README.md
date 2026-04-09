@@ -26,6 +26,8 @@ npm run build
 
 ## Configuration
 
+**Security:** Never share your `.mcp.json` file or commit it to git -- it may contain API credentials. Add `.mcp.json` to your `.gitignore`.
+
 All configuration is via environment variables. No `config.json` file is needed.
 
 | Variable | Required | Description |

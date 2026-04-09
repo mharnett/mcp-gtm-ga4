@@ -523,7 +523,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } catch (rawError: any) {
     if (rawError instanceof SafetyError) {
-      return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: true, error_type: "SafetyError", message: rawError.message, server: __cliPkg.name }, null, 2) }] };
+      return { isError: true, content: [{ type: "text", text: JSON.stringify(safeResponse({ error: true, error_type: "SafetyError", message: rawError.message, server: __cliPkg.name }, "error"), null, 2) }] };
     }
     const error = classifyError(rawError);
     logger.error({ error_type: error.name, message: error.message }, "Tool call failed");
@@ -532,7 +532,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     else if (error instanceof GtmRateLimitError) { response.retry_after_ms = error.retryAfterMs; response.action_required = `Rate limited. Retry after ${Math.ceil(error.retryAfterMs / 1000)}s.`; }
     else if (error instanceof GtmServiceError) response.action_required = "API server error. Retry in a few minutes.";
     else response.details = rawError.stack;
-    return { isError: true, content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
+    // Size-limit error responses through safeResponse to prevent oversized payloads
+    const safeErrorResponse = safeResponse(response, "error");
+    return { isError: true, content: [{ type: "text", text: JSON.stringify(safeErrorResponse, null, 2) }] };
   }
 });
 
