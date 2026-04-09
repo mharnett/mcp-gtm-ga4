@@ -12,6 +12,7 @@ import { GtmAuthError, GtmRateLimitError, GtmServiceError, SafetyError, classify
 import { classifyTag } from "./consent.js";
 import { tools } from "./tools.js";
 import { withResilience, safeResponse, logger } from "./resilience.js";
+import v8 from "v8";
 import { createServer } from "http";
 import { URL } from "url";
 
@@ -179,6 +180,17 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 if (process.argv.includes("--version") || process.argv.includes("-v")) {
   console.error(__cliPkg.version);
   process.exit(0);
+}
+
+// Startup: detect npx vs direct node
+if (process.argv[1]?.includes('.npm/_npx')) {
+  console.error("[startup] Running via npx -- first run may be slow due to package resolution");
+}
+
+// Startup: check heap size
+const heapLimit = v8.getHeapStatistics().heap_size_limit;
+if (heapLimit < 256 * 1024 * 1024) {
+  console.error(`[startup] WARNING: Heap limit is ${Math.round(heapLimit / 1024 / 1024)}MB`);
 }
 
 // ============================================
