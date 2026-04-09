@@ -470,10 +470,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "gtm_audit_consent": return ok(await manager.auditConsent());
       case "gtm_preview": return ok(await manager.preview());
       case "gtm_create_version": return ok(await manager.createVersion(args?.name as string, args?.notes as string));
-      case "ga4_run_report": return ok(await manager.ga4RunReport({ dimensions: args?.dimensions as string, metrics: args?.metrics as string, startDate: args?.start_date as string, endDate: args?.end_date as string, dimensionFilter: args?.dimension_filter as string, limit: args?.limit as number }));
-      case "ga4_realtime_report": return ok(await manager.ga4RealtimeReport({ dimensions: args?.dimensions as string, metrics: args?.metrics as string, dimensionFilter: args?.dimension_filter as string }));
-      case "ga4_list_custom_dimensions": return ok(await manager.ga4ListCustomDimensions());
-      case "ga4_create_custom_dimension": return ok(await manager.ga4CreateCustomDimension({ parameterName: args?.parameter_name as string, displayName: args?.display_name as string, scope: args?.scope as string, description: args?.description as string }));
+      case "gtm_ga4_run_report": return ok(await manager.ga4RunReport({ dimensions: args?.dimensions as string, metrics: args?.metrics as string, startDate: args?.start_date as string, endDate: args?.end_date as string, dimensionFilter: args?.dimension_filter as string, limit: args?.limit as number }));
+      case "gtm_ga4_realtime_report": return ok(await manager.ga4RealtimeReport({ dimensions: args?.dimensions as string, metrics: args?.metrics as string, dimensionFilter: args?.dimension_filter as string }));
+      case "gtm_ga4_list_custom_dimensions": return ok(await manager.ga4ListCustomDimensions());
+      case "gtm_ga4_create_custom_dimension": return ok(await manager.ga4CreateCustomDimension({ parameterName: args?.parameter_name as string, displayName: args?.display_name as string, scope: args?.scope as string, description: args?.description as string }));
       default: throw new Error(`Unknown tool: ${name}`);
     }
   } catch (rawError: any) {
