@@ -486,16 +486,16 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     }
   } catch (rawError: any) {
     if (rawError instanceof SafetyError) {
-      return { content: [{ type: "text", text: JSON.stringify({ error: true, error_type: "SafetyError", message: rawError.message }, null, 2) }], isError: true };
+      return { isError: true, content: [{ type: "text", text: JSON.stringify({ error: true, error_type: "SafetyError", message: rawError.message, server: __cliPkg.name }, null, 2) }] };
     }
     const error = classifyError(rawError);
     logger.error({ error_type: error.name, message: error.message }, "Tool call failed");
-    const response: Record<string, unknown> = { error: true, error_type: error.name, message: error.message };
+    const response: Record<string, unknown> = { error: true, error_type: error.name, message: error.message, server: __cliPkg.name };
     if (error instanceof GtmAuthError) response.action_required = "Check credentials and permissions.";
     else if (error instanceof GtmRateLimitError) { response.retry_after_ms = error.retryAfterMs; response.action_required = `Rate limited. Retry after ${Math.ceil(error.retryAfterMs / 1000)}s.`; }
     else if (error instanceof GtmServiceError) response.action_required = "API server error. Retry in a few minutes.";
     else response.details = rawError.stack;
-    return { content: [{ type: "text", text: JSON.stringify(response, null, 2) }], isError: true };
+    return { isError: true, content: [{ type: "text", text: JSON.stringify(response, null, 2) }] };
   }
 });
 
