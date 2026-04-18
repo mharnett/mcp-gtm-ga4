@@ -12,6 +12,7 @@ import { GtmAuthError, GtmRateLimitError, GtmServiceError, SafetyError, classify
 import { classifyTag } from "./consent.js";
 import { tools } from "./tools.js";
 import { withResilience, safeResponse, logger } from "./resilience.js";
+import { checkForUpdate } from "./updateNotifier.js";
 import v8 from "v8";
 import { createServer } from "http";
 import { URL } from "url";
@@ -166,6 +167,9 @@ const __semverLt = (a: string, b: string) => { const pa = a.split(".").map(Numbe
 if (__semverLt(__cliPkg.version, __minimumSafeVersion)) {
   console.error(`[WARNING] Running deprecated version ${__cliPkg.version}. Minimum safe version is ${__minimumSafeVersion}. Please upgrade.`);
 }
+
+// Fire-and-forget npm outdated check. Non-blocking; any error is swallowed.
+void checkForUpdate(__cliPkg.name, __cliPkg.version).catch(() => {});
 
 // CLI flags
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
