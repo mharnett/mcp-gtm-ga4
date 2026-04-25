@@ -216,7 +216,7 @@ if (!GTM_ACCOUNT_ID || !GTM_CONTAINER_ID) {
 const GTM_CONTAINER_PATH = `accounts/${GTM_ACCOUNT_ID}/containers/${GTM_CONTAINER_ID}`;
 const GTM_WORKSPACE_ID_OVERRIDE = envTrimmed("GTM_SANDBOX_WORKSPACE_ID");
 const GA4_PROPERTY_ID = envTrimmed("GA4_PROPERTY_ID");
-const SERVER_NAME = process.env.MCP_SERVER_NAME || "neon-one-gtm";
+const SERVER_NAME = process.env.MCP_SERVER_NAME || "mcp-gtm-ga4";
 // Resolve relative credential paths to absolute (CWD is unpredictable in MCP hosts)
 const __rawCredsFile = envTrimmed("GOOGLE_APPLICATION_CREDENTIALS");
 const CREDS_FILE = __rawCredsFile && !isAbsolute(__rawCredsFile) ? resolve(__rawCredsFile) : __rawCredsFile;

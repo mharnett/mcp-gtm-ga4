@@ -37,7 +37,7 @@ All configuration is via environment variables. No `config.json` file is needed.
 | `GTM_CONTAINER_ID` | Yes | GTM container ID |
 | `GA4_PROPERTY_ID` | Yes | GA4 property ID |
 | `GTM_SANDBOX_WORKSPACE_ID` | No | Override workspace ID (auto-detects Default Workspace if omitted) |
-| `MCP_SERVER_NAME` | No | Server name (defaults to `neon-one-gtm`) |
+| `MCP_SERVER_NAME` | No | Server name (defaults to package name `mcp-gtm-ga4`) |
 
 See `config.example.json` for a reference template.
 

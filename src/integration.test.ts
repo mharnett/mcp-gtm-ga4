@@ -18,7 +18,7 @@ describe.skipIf(!LIVE)("mcp-gtm-ga4 integration", () => {
     transport = new StdioClientTransport({
       command: "bash",
       args: ["-c", "source ./run-mcp.sh"],
-      cwd: "/Users/mark/claude-code/mcps/neon-one-gtm",
+      cwd: "/Users/mark/claude-code/mcps/mcp-gtm-ga4",
     });
     client = new Client({ name: "test-client", version: "1.0.0" }, { capabilities: {} });
     await client.connect(transport);
