@@ -19,6 +19,10 @@ describe.skipIf(!LIVE)("mcp-gtm-ga4 integration", () => {
       command: "bash",
       args: ["-c", "source ./run-mcp.sh"],
       cwd: "/Users/mark/claude-code/mcps/mcp-gtm-ga4",
+      // StdioClientTransport defaults to a minimal env (PATH-only). We pass
+      // the test-runner env through so the child inherits credentials and
+      // GTM config required by index.ts startup validation.
+      env: process.env as Record<string, string>,
     });
     client = new Client({ name: "test-client", version: "1.0.0" }, { capabilities: {} });
     await client.connect(transport);
@@ -34,9 +38,12 @@ describe.skipIf(!LIVE)("mcp-gtm-ga4 integration", () => {
     expect(names).toContain("gtm_list_tags");
     expect(names).toContain("gtm_list_triggers");
     expect(names).toContain("gtm_list_variables");
+    expect(names).toContain("gtm_get_variable");
+    expect(names).toContain("gtm_create_variable");
+    expect(names).toContain("gtm_update_variable");
     expect(names).toContain("gtm_audit_consent");
-    expect(names).toContain("ga4_run_report");
-    expect(names.length).toBeGreaterThanOrEqual(13);
+    expect(names).toContain("gtm_ga4_run_report");
+    expect(names.length).toBeGreaterThanOrEqual(16);
   });
 
   it("gtm_list_tags returns tags array", async () => {
@@ -92,6 +99,60 @@ describe.skipIf(!LIVE)("mcp-gtm-ga4 integration", () => {
     }
   }, 15_000);
 
+  // Variable CRUD round-trip: create → get → update → (leave for cleanup).
+  // Lives in one test so the test body owns the variable lifecycle and we
+  // don't pollute the workspace with orphans on partial failures.
+  it("variable CRUD round-trip: create, get, update", async () => {
+    const uniqueName = `zz-test-crud-${Date.now()}`;
+    const createBody = JSON.stringify({
+      name: uniqueName,
+      type: "c",
+      parameter: [{ type: "TEMPLATE", key: "value", value: "initial" }],
+    });
+
+    // CREATE
+    const createResult = parseToolResult(
+      await client.callTool({ name: "gtm_create_variable", arguments: { variable_json: createBody } })
+    );
+    expect(createResult).toBeDefined();
+    expect(createResult.error).toBeUndefined();
+    expect(createResult.variableId).toBeDefined();
+    expect(createResult.created).toContain(uniqueName);
+    const newVarId = createResult.variableId;
+
+    // GET
+    const getResult = parseToolResult(
+      await client.callTool({ name: "gtm_get_variable", arguments: { variable_id: newVarId } })
+    );
+    expect(getResult.error).toBeUndefined();
+    expect(getResult.variableId).toBe(newVarId);
+    expect(getResult.name).toBe(uniqueName);
+    expect(getResult.type).toBe("c");
+
+    // UPDATE
+    const updateBody = JSON.stringify({
+      parameter: [{ type: "TEMPLATE", key: "value", value: "updated" }],
+    });
+    const updateResult = parseToolResult(
+      await client.callTool({ name: "gtm_update_variable", arguments: { variable_id: newVarId, updates_json: updateBody } })
+    );
+    expect(updateResult.error).toBeUndefined();
+    expect(updateResult.variableId).toBe(newVarId);
+
+    // GET again to verify update persisted
+    const getResult2 = parseToolResult(
+      await client.callTool({ name: "gtm_get_variable", arguments: { variable_id: newVarId } })
+    );
+    expect(getResult2.parameter[0].value).toBe("updated");
+
+    // DELETE — cleanup so repeated test runs don't accumulate orphans
+    const deleteResult = parseToolResult(
+      await client.callTool({ name: "gtm_delete_variable", arguments: { variable_id: newVarId } })
+    );
+    expect(deleteResult.error).toBeUndefined();
+    expect(deleteResult.deleted).toBe(newVarId);
+  }, 30_000);
+
   it("gtm_audit_consent returns summary with compliance_pct", async () => {
     const result = await client.callTool({
       name: "gtm_audit_consent",
@@ -111,7 +172,7 @@ describe.skipIf(!LIVE)("mcp-gtm-ga4 integration", () => {
 
   it("ga4_run_report returns rows", async () => {
     const result = await client.callTool({
-      name: "ga4_run_report",
+      name: "gtm_ga4_run_report",
       arguments: {
         dimensions: "date",
         metrics: "sessions",

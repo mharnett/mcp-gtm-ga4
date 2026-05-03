@@ -365,6 +365,51 @@ class GtmGa4Manager {
     }, "gtm_list_variables");
   }
 
+  async getVariable(variableId: string): Promise<any> {
+    const svc = this.getGtmService();
+    const path = `${await this.getWorkspacePath()}/variables/${variableId}`;
+    return withResilience(async () => {
+      const resp = await svc.accounts.containers.workspaces.variables.get({ path });
+      return resp.data;
+    }, "gtm_get_variable");
+  }
+
+  async updateVariable(variableId: string, updatesJson: string): Promise<any> {
+    this.assertSandbox(await this.getWorkspaceId());
+    const svc = this.getGtmService();
+    const path = `${await this.getWorkspacePath()}/variables/${variableId}`;
+    return withResilience(async () => {
+      const current = (await svc.accounts.containers.workspaces.variables.get({ path })).data;
+      const updates = JSON.parse(updatesJson);
+      const merged = { ...current, ...updates };
+      const resp = await svc.accounts.containers.workspaces.variables.update({
+        path, requestBody: merged, fingerprint: current.fingerprint!,
+      });
+      return { updated: resp.data.name, variableId: resp.data.variableId };
+    }, "gtm_update_variable");
+  }
+
+  async createVariable(variableJson: string): Promise<any> {
+    this.assertSandbox(await this.getWorkspaceId());
+    const svc = this.getGtmService();
+    const wp = await this.getWorkspacePath();
+    return withResilience(async () => {
+      const body = JSON.parse(variableJson);
+      const resp = await svc.accounts.containers.workspaces.variables.create({ parent: wp, requestBody: body });
+      return { created: resp.data.name, variableId: resp.data.variableId };
+    }, "gtm_create_variable");
+  }
+
+  async deleteVariable(variableId: string): Promise<any> {
+    this.assertSandbox(await this.getWorkspaceId());
+    const svc = this.getGtmService();
+    const path = `${await this.getWorkspacePath()}/variables/${variableId}`;
+    return withResilience(async () => {
+      await svc.accounts.containers.workspaces.variables.delete({ path });
+      return { deleted: variableId };
+    }, "gtm_delete_variable");
+  }
+
   async auditConsent(): Promise<any> {
     const rawTags = await this.listTags();
     const svc = this.getGtmService();
@@ -517,6 +562,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "gtm_create_tag": return ok(await manager.createTag(args?.tag_json as string));
       case "gtm_list_triggers": return ok(await manager.listTriggers());
       case "gtm_list_variables": return ok(await manager.listVariables());
+      case "gtm_get_variable": return ok(await manager.getVariable(args?.variable_id as string));
+      case "gtm_update_variable": return ok(await manager.updateVariable(args?.variable_id as string, args?.updates_json as string));
+      case "gtm_create_variable": return ok(await manager.createVariable(args?.variable_json as string));
+      case "gtm_delete_variable": return ok(await manager.deleteVariable(args?.variable_id as string));
       case "gtm_audit_consent": return ok(await manager.auditConsent());
       case "gtm_preview": return ok(await manager.preview());
       case "gtm_create_version": return ok(await manager.createVersion(args?.name as string, args?.notes as string));
