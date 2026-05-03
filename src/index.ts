@@ -238,6 +238,10 @@ class GtmGa4Manager {
         scopes: [
           "https://www.googleapis.com/auth/tagmanager.edit.containers",
           "https://www.googleapis.com/auth/tagmanager.edit.containerversions",
+          // Required for create_version and quick_preview when the SA has
+          // Approve/Publish role at the container level. Without this scope,
+          // those calls return Insufficient Permission even with the role.
+          "https://www.googleapis.com/auth/tagmanager.publish",
         ],
       });
       this.gtmService = google.tagmanager({ version: "v2", auth });
