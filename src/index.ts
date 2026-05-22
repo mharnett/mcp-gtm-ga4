@@ -8,7 +8,10 @@ import { join, dirname, resolve, isAbsolute } from "path";
 import { google, tagmanager_v2 } from "googleapis";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
 import { AnalyticsAdminServiceClient } from "@google-analytics/admin";
-import { GtmAuthError, GtmRateLimitError, GtmServiceError, SafetyError, classifyError } from "./errors.js";
+import { GtmAuthError, GtmRateLimitError, GtmServiceError, classifyError } from "./errors.js";
+// NOTE: no runtime sandbox guard exists. GTM publish operations rely entirely on
+// the write-gate (env-gated mutation tools + sandbox workspace resolution at
+// startup). If a stronger guard is wanted, that's a separate design decision.
 import { classifyTag } from "./consent.js";
 import { tools } from "./tools.js";
 import { withResilience, safeResponse, logger } from "./resilience.js";
@@ -291,13 +294,6 @@ class GtmGa4Manager {
     return `${GTM_CONTAINER_PATH}/workspaces/${await this.getWorkspaceId()}`;
   }
 
-  private assertSandbox(_workspaceId: string) {
-    // Workspace was resolved at startup from GTM_SANDBOX_WORKSPACE_ID env var
-    // or auto-detected as "Default Workspace". All writes go to this workspace.
-    // This is a safety marker, not a runtime guard.
-    logger.debug({ workspace: this.resolvedWorkspaceId }, "Write operation targeting sandbox workspace");
-  }
-
   // ── GTM Tags ──
   async listTags(): Promise<any> {
     const svc = this.getGtmService();
@@ -324,7 +320,6 @@ class GtmGa4Manager {
   }
 
   async updateTag(tagId: string, updatesJson: string): Promise<any> {
-    this.assertSandbox(await this.getWorkspaceId());
     const svc = this.getGtmService();
     const path = `${await this.getWorkspacePath()}/tags/${tagId}`;
     return withResilience(async () => {
@@ -339,7 +334,6 @@ class GtmGa4Manager {
   }
 
   async createTag(tagJson: string): Promise<any> {
-    this.assertSandbox(await this.getWorkspaceId());
     const svc = this.getGtmService();
     const wp = await this.getWorkspacePath();
     return withResilience(async () => {
@@ -379,7 +373,6 @@ class GtmGa4Manager {
   }
 
   async updateVariable(variableId: string, updatesJson: string): Promise<any> {
-    this.assertSandbox(await this.getWorkspaceId());
     const svc = this.getGtmService();
     const path = `${await this.getWorkspacePath()}/variables/${variableId}`;
     return withResilience(async () => {
@@ -394,7 +387,6 @@ class GtmGa4Manager {
   }
 
   async createVariable(variableJson: string): Promise<any> {
-    this.assertSandbox(await this.getWorkspaceId());
     const svc = this.getGtmService();
     const wp = await this.getWorkspacePath();
     return withResilience(async () => {
@@ -405,7 +397,6 @@ class GtmGa4Manager {
   }
 
   async deleteVariable(variableId: string): Promise<any> {
-    this.assertSandbox(await this.getWorkspaceId());
     const svc = this.getGtmService();
     const path = `${await this.getWorkspacePath()}/variables/${variableId}`;
     return withResilience(async () => {
@@ -446,7 +437,6 @@ class GtmGa4Manager {
   }
 
   async preview(): Promise<any> {
-    this.assertSandbox(await this.getWorkspaceId());
     const svc = this.getGtmService();
     const wp = await this.getWorkspacePath();
     return withResilience(async () => {
@@ -456,7 +446,6 @@ class GtmGa4Manager {
   }
 
   async createVersion(name: string, notes?: string): Promise<any> {
-    this.assertSandbox(await this.getWorkspaceId());
     const svc = this.getGtmService();
     const wp = await this.getWorkspacePath();
     return withResilience(async () => {
@@ -580,9 +569,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       default: throw new Error(`Unknown tool: ${name}`);
     }
   } catch (rawError: any) {
-    if (rawError instanceof SafetyError) {
-      return { isError: true, content: [{ type: "text", text: JSON.stringify(safeResponse({ error: true, error_type: "SafetyError", message: rawError.message, server: __cliPkg.name }, "error"), null, 2) }] };
-    }
     const error = classifyError(rawError);
     logger.error({ error_type: error.name, message: error.message }, "Tool call failed");
     const response: Record<string, unknown> = { error: true, error_type: error.name, message: error.message, server: __cliPkg.name };

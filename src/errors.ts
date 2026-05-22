@@ -12,10 +12,6 @@ export class GtmServiceError extends Error {
   constructor(message: string, public readonly cause?: unknown) { super(message); this.name = "GtmServiceError"; }
 }
 
-export class SafetyError extends Error {
-  constructor(message: string) { super(message); this.name = "SafetyError"; }
-}
-
 export function validateCredentials(): { valid: boolean; missing: string[] } {
   const missing: string[] = [];
   if (!process.env.GOOGLE_APPLICATION_CREDENTIALS?.trim()) missing.push("GOOGLE_APPLICATION_CREDENTIALS");
