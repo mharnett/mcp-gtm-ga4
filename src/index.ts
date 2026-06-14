@@ -15,7 +15,7 @@ import { GtmAuthError, GtmRateLimitError, GtmServiceError, classifyError } from 
 import { classifyTag } from "./consent.js";
 import { tools } from "./tools.js";
 import { withResilience, safeResponse, logger } from "./resilience.js";
-import { checkForUpdate } from "./updateNotifier.js";
+import { checkForUpdate } from "mcp-updatenotifier";
 import v8 from "v8";
 import { createServer } from "http";
 import { URL } from "url";
