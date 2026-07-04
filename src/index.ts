@@ -31,6 +31,7 @@ import {
   buildAuthUrl,
   buildTokenExchangeBody,
   requireClientCreds,
+  classifyCallbackRequest,
 } from "./authFlow.js";
 
 // ============================================
@@ -90,33 +91,34 @@ async function runAuth(): Promise<void> {
   return new Promise((resolve, reject) => {
     const srv = createServer(async (req, res) => {
       const url = new URL(req.url!, redirectUri);
-      if (url.pathname !== "/callback") {
+      const decision = classifyCallbackRequest(url.pathname, url.searchParams, state);
+      if (decision.kind === "not-found") {
         res.writeHead(404);
         res.end("Not found");
         return;
       }
-      const error = url.searchParams.get("error");
-      if (error) {
+      if (decision.kind === "denied") {
         res.writeHead(400);
         res.end("Authorization denied. You can close this tab.");
         srv.close();
-        reject(new Error(`OAuth denied: ${error}`));
+        reject(new Error(`OAuth denied: ${decision.error}`));
         return;
       }
-      const returnedState = url.searchParams.get("state");
-      if (returnedState !== state) {
+      if (decision.kind === "ignore") {
+        // Stray hit on /callback with no code/error (favicon/preflight). Do NOT
+        // treat as CSRF or tear down — the real redirect may still be coming.
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (decision.kind === "csrf") {
         res.writeHead(400);
         res.end("State mismatch. Possible CSRF. Re-run the command.");
         srv.close();
         reject(new Error("OAuth state mismatch -- possible CSRF"));
         return;
       }
-      const code = url.searchParams.get("code");
-      if (!code) {
-        res.writeHead(400);
-        res.end("No authorization code received");
-        return;
-      }
+      const code = decision.code;
       try {
         const resp = await fetch(OAUTH_TOKEN_URL, {
           method: "POST",

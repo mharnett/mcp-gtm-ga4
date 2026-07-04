@@ -14,6 +14,7 @@ import {
   buildTokenExchangeBody,
   requireClientCreds,
   resolveAuthMode,
+  classifyCallbackRequest,
   OAUTH_SCOPE,
 } from "./authFlow.js";
 import { buildLoopbackRedirectUri, computeCodeChallenge } from "./pkce.js";
@@ -102,6 +103,37 @@ describe("requireClientCreds", () => {
     } catch (e) {
       expect((e as Error).message).not.toMatch(/GOOGLE_CLIENT_ID\b(?!.*SECRET)/);
     }
+  });
+});
+
+describe("classifyCallbackRequest — loopback redirect handling", () => {
+  const EXPECTED = "expected-state";
+  const p = (params: Record<string, string>) => new URLSearchParams(params);
+
+  it("wrong path -> not-found (ignore favicon/etc)", () => {
+    expect(classifyCallbackRequest("/favicon.ico", p({}), EXPECTED).kind).toBe("not-found");
+  });
+
+  it("error param -> denied (before any state check)", () => {
+    const r = classifyCallbackRequest("/callback", p({ error: "access_denied" }), EXPECTED);
+    expect(r.kind).toBe("denied");
+  });
+
+  it("a stray request to /callback with NO code/error -> ignore (204), NOT a CSRF reject", () => {
+    // This is the bug the extraction fixes: a preflight/no-param hit on /callback
+    // must not be treated as a state mismatch and tear the server down.
+    expect(classifyCallbackRequest("/callback", p({}), EXPECTED).kind).toBe("ignore");
+  });
+
+  it("code present but state mismatched -> csrf", () => {
+    const r = classifyCallbackRequest("/callback", p({ code: "abc", state: "wrong" }), EXPECTED);
+    expect(r.kind).toBe("csrf");
+  });
+
+  it("code present with matching state -> success (returns the code)", () => {
+    const r = classifyCallbackRequest("/callback", p({ code: "abc", state: EXPECTED }), EXPECTED);
+    expect(r.kind).toBe("success");
+    if (r.kind === "success") expect(r.code).toBe("abc");
   });
 });
 

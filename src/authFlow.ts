@@ -30,6 +30,34 @@ export function resolveAuthMode(argv: string[]): "oauth" | "service-account" {
   return argv[0] === "auth" ? "oauth" : "service-account";
 }
 
+export type CallbackDecision =
+  | { kind: "not-found" }
+  | { kind: "denied"; error: string }
+  | { kind: "ignore" } // stray request (favicon/preflight) — no code, no error
+  | { kind: "csrf" }
+  | { kind: "success"; code: string };
+
+/**
+ * Classify an incoming loopback request. Ordering matters: a stray hit on the
+ * callback path with neither `code` nor `error` (favicon/preflight/probe) must
+ * be IGNORED (204), NOT treated as a state mismatch — otherwise the server would
+ * tear down on the first stray request before the real redirect arrives. The
+ * state (CSRF) check is only applied once we actually have a `code` to accept.
+ */
+export function classifyCallbackRequest(
+  pathname: string,
+  params: URLSearchParams,
+  expectedState: string,
+): CallbackDecision {
+  if (pathname !== "/callback") return { kind: "not-found" };
+  const error = params.get("error");
+  if (error) return { kind: "denied", error };
+  const code = params.get("code");
+  if (!code) return { kind: "ignore" };
+  if (params.get("state") !== expectedState) return { kind: "csrf" };
+  return { kind: "success", code };
+}
+
 /** Require both OAuth client creds from an env-like object; throw a clear error
  * naming exactly the missing var(s). */
 export function requireClientCreds(env: Record<string, string | undefined>): {
