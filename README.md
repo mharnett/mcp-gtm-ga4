@@ -28,18 +28,59 @@ npm run build
 
 **Security:** Never share your `.mcp.json` file or commit it to git -- it may contain API credentials. Add `.mcp.json` to your `.gitignore`.
 
-All configuration is via environment variables. No `config.json` file is needed.
+Runtime configuration is via environment variables.
 
 | Variable | Required | Description |
 |---|---|---|
-| `GOOGLE_APPLICATION_CREDENTIALS` | Yes | Path to a GCP service account JSON key file |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Yes | Path to a Google credential JSON key file (service account **or** authorized-user — see Authentication below) |
 | `GTM_ACCOUNT_ID` | Yes | GTM account ID |
 | `GTM_CONTAINER_ID` | Yes | GTM container ID |
 | `GA4_PROPERTY_ID` | Yes | GA4 property ID |
 | `GTM_SANDBOX_WORKSPACE_ID` | No | Override workspace ID (auto-detects Default Workspace if omitted) |
 | `MCP_SERVER_NAME` | No | Server name (defaults to package name `mcp-gtm-ga4`) |
 
-See `config.example.json` for a reference template.
+See `config.example.json` for a reference template. The only value read from disk is `oauth.scope` (in an optional `config.json`) — the single source of truth for the OAuth scope the onboarding paths request. If no `config.json` is present, the committed minimum scope is used.
+
+## Authentication
+
+This MCP supports **two** auth models. Both feed the same `GOOGLE_APPLICATION_CREDENTIALS` runtime path.
+
+### 1. Service account (primary, recommended for servers)
+
+Create a service account in your GCP project, download its JSON key, grant it the GTM container role and GA4 property access, and point `GOOGLE_APPLICATION_CREDENTIALS` at the key file. No OAuth flow, no browser, no refresh token. This is the recommended path for headless/server deployments.
+
+### 2. User OAuth (for users without a service account)
+
+If you can't use a service account, mint a user credential with your **own** Google OAuth client (a "Desktop app" OAuth 2.0 Client ID created in your own GCP project — enable the Tag Manager API and the Google Analytics Admin + Data APIs). Two equivalent onboarding commands, both hardened with PKCE (RFC 7636, S256) and both requesting the scope from `config.json` (`oauth.scope`) so they never drift:
+
+```bash
+export GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
+export GOOGLE_CLIENT_SECRET=your-client-secret
+
+# Option A: write an authorized_user credential file directly
+node dist/index.js auth --output ./gtm-ga4-credentials.json
+# then set GOOGLE_APPLICATION_CREDENTIALS=./gtm-ga4-credentials.json
+
+# Option B: the standalone helper (prints GOOGLE_REFRESH_TOKEN + a ready-to-save
+# authorized_user JSON you can write to a file for GOOGLE_APPLICATION_CREDENTIALS)
+node get-refresh-token.cjs
+```
+
+The refresh token / credential is written by you and read from your environment only. Nothing is shared and no OAuth client keyfile is bundled. **Do not** run the helper with stdout redirected to a shared log — the refresh token is printed to stdout by design.
+
+### OAuth scopes requested
+
+The onboarding paths request exactly the scopes this MCP's tools use (from `config.example.json` → `oauth.scope`):
+
+| Scope | Needed by |
+|---|---|
+| `tagmanager.edit.containers` | `gtm_create_tag`, `gtm_update_tag`, `gtm_create_variable`, `gtm_update_variable`, `gtm_delete_variable`, tag/trigger/variable reads |
+| `tagmanager.edit.containerversions` | `gtm_create_version` |
+| `tagmanager.publish` | `gtm_create_version`, `gtm_preview` (quick preview) |
+| `analytics.readonly` | `gtm_ga4_run_report`, `gtm_ga4_realtime_report`, `gtm_ga4_list_custom_dimensions` |
+| `analytics.edit` | `gtm_ga4_create_custom_dimension` |
+
+`tagmanager.readonly` is intentionally **not** requested — the edit scopes already grant read access.
 
 ## Usage
 

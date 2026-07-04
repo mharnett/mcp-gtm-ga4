@@ -1,5 +1,8 @@
 {
-  "note": "All configuration is via environment variables. See README for details.",
+  "note": "Runtime configuration is via environment variables (see README). This file's oauth.scope is the ONLY value read from disk: it is the single source of truth for the OAuth scope the onboarding helper (get-refresh-token.cjs) and the `auth` subcommand request, so they never drift. Copy to config.json to override.",
+  "oauth": {
+    "scope": "https://www.googleapis.com/auth/tagmanager.edit.containers https://www.googleapis.com/auth/tagmanager.edit.containerversions https://www.googleapis.com/auth/tagmanager.publish https://www.googleapis.com/auth/analytics.readonly https://www.googleapis.com/auth/analytics.edit"
+  },
   "env_vars": {
     "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account.json",
     "GTM_ACCOUNT_ID": "your-gtm-account-id",
