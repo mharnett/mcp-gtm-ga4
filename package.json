@@ -40,7 +40,7 @@
     "cockatiel": "^3.2.1",
     "google-auth-library": "^9.14.0",
     "googleapis": "^144.0.0",
-    "mcp-updatenotifier": "file:../mcp-updatenotifier",
+    "mcp-updatenotifier": "^1.0.0",
     "pino": "^8.21.0",
     "pino-pretty": "^13.1.3"
   },
