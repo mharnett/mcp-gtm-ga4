@@ -150,4 +150,23 @@ describe("resolveAuthMode — user-OAuth onboarding vs service-account runtime",
   it("'auth' must be the first arg (a later 'auth' token is not the subcommand)", () => {
     expect(resolveAuthMode(["--foo", "auth"])).toBe("service-account");
   });
+
+  // The live dispatch in index.ts calls resolveAuthMode(process.argv.slice(2)).
+  // Pin that contract: fed a process-style argv (node, script, ...user args),
+  // the sliced result must select "oauth" iff the first USER arg is "auth" —
+  // exactly what the old inline `process.argv[2] === "auth"` check did, so the
+  // rewire through the tested abstraction is behavior-preserving.
+  it("governs the live dispatch: process.argv.slice(2) selects oauth iff argv[2]==='auth'", () => {
+    const asProcessArgv = (userArgs) => ["node", "/path/dist/index.js", ...userArgs];
+    for (const userArgs of [["auth"], ["auth", "--output", "x"]]) {
+      const argv = asProcessArgv(userArgs);
+      expect(resolveAuthMode(argv.slice(2))).toBe("oauth");
+      expect(resolveAuthMode(argv.slice(2)) === "oauth").toBe(argv[2] === "auth");
+    }
+    for (const userArgs of [[], ["--help"], ["-v"], ["--foo", "auth"]]) {
+      const argv = asProcessArgv(userArgs);
+      expect(resolveAuthMode(argv.slice(2))).toBe("service-account");
+      expect(resolveAuthMode(argv.slice(2)) === "oauth").toBe(argv[2] === "auth");
+    }
+  });
 });

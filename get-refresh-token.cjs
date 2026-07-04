@@ -169,6 +169,26 @@ function buildAuthUrl({ clientId, redirectUri, scope, state, codeChallenge }) {
   return `${AUTH_URL}?${params.toString()}`;
 }
 
+/**
+ * Classify an incoming loopback request. BYTE-FOR-BEHAVIOR-IDENTICAL to the
+ * runtime (src/authFlow.ts classifyCallbackRequest) — a callback-parity test
+ * asserts the two agree. Ordering matters: a stray hit on the callback path with
+ * neither `code` nor `error` (favicon/preflight/HEAD/prefetch/refresh) must be
+ * IGNORED (204), NOT treated as a state mismatch — otherwise the server tears
+ * down on the first stray request before Google's real redirect arrives. The
+ * state (CSRF) check applies only once we actually have a `code` to accept.
+ * Returns: { kind: "not-found" | "denied" | "ignore" | "csrf" | "success", ... }
+ */
+function classifyCallbackRequest(pathname, params, expectedState) {
+  if (pathname !== LOOPBACK_PATH) return { kind: "not-found" };
+  const error = params.get("error");
+  if (error) return { kind: "denied", error };
+  const code = params.get("code");
+  if (!code) return { kind: "ignore" };
+  if (params.get("state") !== expectedState) return { kind: "csrf" };
+  return { kind: "success", code };
+}
+
 function buildTokenExchangeParams({ code, clientId, clientSecret, redirectUri, codeVerifier }) {
   return new URLSearchParams({
     grant_type: "authorization_code",
@@ -212,24 +232,28 @@ async function run() {
       fn();
     };
     const server = http.createServer((req, res) => {
-      if (!req.url || !req.url.startsWith(LOOPBACK_PATH)) {
+      const url = new URL(req.url || "/", redirectUri);
+      const decision = classifyCallbackRequest(url.pathname, url.searchParams, state);
+      if (decision.kind === "not-found") {
         res.writeHead(404).end();
         return;
       }
-      const url = new URL(req.url, redirectUri);
-      const err = url.searchParams.get("error");
-      const returnedCode = url.searchParams.get("code");
-      const returnedState = url.searchParams.get("state");
-      if (err) {
+      if (decision.kind === "denied") {
         res.writeHead(400, { "Content-Type": "text/html" });
         res.end("<h1>Authorization denied</h1><p>You can close this tab.</p>");
         done(() => {
           server.close();
-          reject(new Error(`OAuth denied: ${err}`));
+          reject(new Error(`OAuth denied: ${decision.error}`));
         });
         return;
       }
-      if (returnedState !== state) {
+      if (decision.kind === "ignore") {
+        // Stray hit on /callback with no code/error (favicon/preflight/prefetch).
+        // Do NOT treat as CSRF or tear down — the real redirect may still come.
+        res.writeHead(204).end();
+        return;
+      }
+      if (decision.kind === "csrf") {
         res.writeHead(400, { "Content-Type": "text/html" });
         res.end("<h1>State mismatch</h1><p>Possible CSRF. Re-run the command.</p>");
         done(() => {
@@ -238,15 +262,11 @@ async function run() {
         });
         return;
       }
-      if (!returnedCode) {
-        res.writeHead(204).end();
-        return;
-      }
       res.writeHead(200, { "Content-Type": "text/html" });
       res.end("<h1>Signed in</h1><p>You can close this tab and return to the terminal.</p>");
       done(() => {
         setTimeout(() => server.close(), 200);
-        resolve(returnedCode);
+        resolve(decision.code);
       });
     });
     server.on("error", (e) => done(() => reject(new Error(`Loopback server failed: ${e.message}`))));
@@ -317,6 +337,7 @@ module.exports = {
   resolveScopeFromDir,
   loadScope,
   requireClientCreds,
+  classifyCallbackRequest,
   buildAuthUrl,
   buildTokenExchangeParams,
   buildAuthorizedUserCredential,

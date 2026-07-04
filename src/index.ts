@@ -32,6 +32,7 @@ import {
   buildTokenExchangeBody,
   requireClientCreds,
   classifyCallbackRequest,
+  resolveAuthMode,
 } from "./authFlow.js";
 
 // ============================================
@@ -174,8 +175,10 @@ async function runAuth(): Promise<void> {
   });
 }
 
-// Handle auth subcommand before anything else
-if (process.argv[2] === "auth") {
+// Handle auth subcommand before anything else. The mode decision goes through
+// the tested resolveAuthMode() abstraction (imported from authFlow) so the live
+// dispatch and the unit tests can't drift on what counts as the `auth` command.
+if (resolveAuthMode(process.argv.slice(2)) === "oauth") {
   runAuth().then(() => process.exit(0)).catch(() => process.exit(1));
 } else {
 
