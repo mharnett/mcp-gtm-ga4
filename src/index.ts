@@ -33,6 +33,7 @@ import {
   requireClientCreds,
   classifyCallbackRequest,
   resolveAuthMode,
+  resolveCredentialSource,
 } from "./authFlow.js";
 
 // ============================================
@@ -250,9 +251,15 @@ const GTM_CONTAINER_PATH = `accounts/${GTM_ACCOUNT_ID}/containers/${GTM_CONTAINE
 const GTM_WORKSPACE_ID_OVERRIDE = envTrimmed("GTM_SANDBOX_WORKSPACE_ID");
 const GA4_PROPERTY_ID = envTrimmed("GA4_PROPERTY_ID");
 const SERVER_NAME = process.env.MCP_SERVER_NAME || "mcp-gtm-ga4";
-// Resolve relative credential paths to absolute (CWD is unpredictable in MCP hosts)
-const __rawCredsFile = envTrimmed("GOOGLE_APPLICATION_CREDENTIALS");
-const CREDS_FILE = __rawCredsFile && !isAbsolute(__rawCredsFile) ? resolve(__rawCredsFile) : __rawCredsFile;
+// Resolve the credential source. resolveCredentialSource() enforces the auth
+// precedence: an explicitly-configured GOOGLE_APPLICATION_CREDENTIALS keyfile
+// (service-account JSON — the recommended unattended path — or the
+// authorized_user keyfile the `auth` subcommand writes) is used; when NONE is
+// set it throws LOUDLY instead of letting GoogleAuth silently fall through to
+// Application Default Credentials (no silent machine-local default). Relative
+// paths are then resolved to absolute (CWD is unpredictable in MCP hosts).
+const __rawCredsFile = resolveCredentialSource(process.env);
+const CREDS_FILE = isAbsolute(__rawCredsFile) ? __rawCredsFile : resolve(__rawCredsFile);
 
 // ============================================
 // GTM + GA4 MANAGER
@@ -267,7 +274,9 @@ class GtmGa4Manager {
   private getGtmService(): tagmanager_v2.Tagmanager {
     if (!this.gtmService) {
       const auth = new google.auth.GoogleAuth({
-        keyFile: CREDS_FILE || undefined,
+        // CREDS_FILE is guaranteed non-empty (resolveCredentialSource throws
+        // otherwise) — never pass undefined, which would trigger silent ADC.
+        keyFile: CREDS_FILE,
         scopes: [
           "https://www.googleapis.com/auth/tagmanager.edit.containers",
           "https://www.googleapis.com/auth/tagmanager.edit.containerversions",
@@ -284,8 +293,7 @@ class GtmGa4Manager {
 
   private getDataClient(): InstanceType<typeof BetaAnalyticsDataClient> {
     if (!this.dataClient) {
-      const opts: any = {};
-      if (CREDS_FILE) opts.keyFile = CREDS_FILE;
+      const opts: any = { keyFile: CREDS_FILE };
       opts.scopes = ["https://www.googleapis.com/auth/analytics.readonly"];
       this.dataClient = new BetaAnalyticsDataClient(opts);
     }
@@ -294,8 +302,7 @@ class GtmGa4Manager {
 
   private getAdminClient(): InstanceType<typeof AnalyticsAdminServiceClient> {
     if (!this.adminClient) {
-      const opts: any = {};
-      if (CREDS_FILE) opts.keyFile = CREDS_FILE;
+      const opts: any = { keyFile: CREDS_FILE };
       opts.scopes = [
         "https://www.googleapis.com/auth/analytics.readonly",
         "https://www.googleapis.com/auth/analytics.edit",

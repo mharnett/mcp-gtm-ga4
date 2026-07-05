@@ -30,6 +30,46 @@ export function resolveAuthMode(argv: string[]): "oauth" | "service-account" {
   return argv[0] === "auth" ? "oauth" : "service-account";
 }
 
+/**
+ * Resolve the runtime credential source from the environment.
+ *
+ * MECHANISM (read this before "fixing" it): there is NO runtime service-account
+ * -vs-OAuth toggle to reorder. Both supported auth models converge on ONE slot,
+ * `GOOGLE_APPLICATION_CREDENTIALS`, which the runtime feeds to
+ * `GoogleAuth({ keyFile })`:
+ *   - a service-account JSON key (the primary/recommended unattended path), and
+ *   - the `authorized_user` keyfile the `auth` subcommand writes (interactive
+ *     OAuth) — a file that plugs into the exact same slot.
+ * Whichever file the operator points the env var at IS the credential. So the
+ * only genuine precedence rule here is failure handling: an explicitly-configured
+ * keyfile is used; when NONE is set we throw LOUDLY instead of letting GoogleAuth
+ * silently fall through to Application Default Credentials (gcloud user creds /
+ * GCE metadata server) — an ambient machine-local default nobody asked for and
+ * the silent failover this guards against.
+ *
+ * Returns the trimmed keyfile path (quotes/whitespace stripped). Relative-path
+ * resolution to absolute is the caller's job (CWD is unpredictable in MCP hosts).
+ */
+export function resolveCredentialSource(env: Record<string, string | undefined>): string {
+  const path = (env.GOOGLE_APPLICATION_CREDENTIALS || "")
+    .trim()
+    .replace(/^["']|["']$/g, "")
+    .trim();
+  if (!path) {
+    throw new Error(
+      "No credentials configured: GOOGLE_APPLICATION_CREDENTIALS is unset. Point it " +
+        "at a Google credential JSON key file — there are two supported ways forward:\n" +
+        "  1. Service account (recommended for unattended/server use): create a service " +
+        "account, grant it your GTM container role + GA4 property access, download its " +
+        "JSON key, and set GOOGLE_APPLICATION_CREDENTIALS to that file.\n" +
+        "  2. User OAuth (interactive): run `node dist/index.js auth --output <path>` to " +
+        "mint an authorized_user keyfile, then set GOOGLE_APPLICATION_CREDENTIALS to it.\n" +
+        "Refusing to fall back to Application Default Credentials — no silent machine-local default.",
+    );
+  }
+  return path;
+}
+
 export type CallbackDecision =
   | { kind: "not-found" }
   | { kind: "denied"; error: string }

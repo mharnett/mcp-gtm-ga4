@@ -45,11 +45,33 @@ See `config.example.json` for a reference template. The only value read from dis
 
 This MCP supports **two** auth models. Both feed the same `GOOGLE_APPLICATION_CREDENTIALS` runtime path.
 
-### 1. Service account (primary, recommended for servers)
+### Precedence & mechanism
 
-Create a service account in your GCP project, download its JSON key, grant it the GTM container role and GA4 property access, and point `GOOGLE_APPLICATION_CREDENTIALS` at the key file. No OAuth flow, no browser, no refresh token. This is the recommended path for headless/server deployments.
+There is **no runtime service-account-vs-OAuth toggle**. Both models converge on a
+single slot — `GOOGLE_APPLICATION_CREDENTIALS` — which the runtime hands to
+`GoogleAuth({ keyFile })`. Whichever file you point that env var at *is* the
+credential:
 
-### 2. User OAuth (for users without a service account)
+- a **service-account JSON key** (option 1 below), or
+- the **`authorized_user` keyfile** the `auth` subcommand writes (option 2) — a
+  file that plugs into the exact same slot.
+
+So the only real precedence rule is failure handling: **an explicitly-configured
+keyfile is used; when `GOOGLE_APPLICATION_CREDENTIALS` is unset the server fails
+loudly at startup** with an onboarding error naming both the service-account path
+and the `auth` OAuth helper. It deliberately does **not** fall back to Google's
+Application Default Credentials (gcloud user creds / GCE metadata server) — no
+silent machine-local default, no silent runtime failover.
+
+### 1. Service account (primary, recommended for unattended/server use)
+
+Create a service account in your GCP project, download its JSON key, grant it the
+GTM container role (on the target GTM container) and GA4 property access, and
+point `GOOGLE_APPLICATION_CREDENTIALS` at the key file. No OAuth flow, no browser,
+no refresh token. **This is the recommended path for headless/server/unattended
+deployments.**
+
+### 2. User OAuth (interactive, for users without a service account)
 
 If you can't use a service account, mint a user credential with your **own** Google OAuth client (a "Desktop app" OAuth 2.0 Client ID created in your own GCP project — enable the Tag Manager API and the Google Analytics Admin + Data APIs). Two equivalent onboarding commands, both hardened with PKCE (RFC 7636, S256) and both requesting the scope from `config.json` (`oauth.scope`) so they never drift:
 

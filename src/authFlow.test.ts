@@ -14,6 +14,7 @@ import {
   buildTokenExchangeBody,
   requireClientCreds,
   resolveAuthMode,
+  resolveCredentialSource,
   classifyCallbackRequest,
   OAUTH_SCOPE,
 } from "./authFlow.js";
@@ -134,6 +135,52 @@ describe("classifyCallbackRequest — loopback redirect handling", () => {
     const r = classifyCallbackRequest("/callback", p({ code: "abc", state: EXPECTED }), EXPECTED);
     expect(r.kind).toBe("success");
     if (r.kind === "success") expect(r.code).toBe("abc");
+  });
+});
+
+describe("resolveCredentialSource — explicit keyfile first, loud fail when unset", () => {
+  // MECHANISM: both auth models converge on GOOGLE_APPLICATION_CREDENTIALS. A
+  // service-account JSON and the authorized_user keyfile the `auth` subcommand
+  // writes are BOTH consumed through the same GoogleAuth({keyFile}) slot. So the
+  // only real "precedence" is: an explicitly-configured keyfile wins; when NONE
+  // is configured we must fail LOUDLY rather than fall through to GoogleAuth's
+  // silent Application Default Credentials (gcloud/metadata-server machine-local
+  // default) — which is the silent-default failover this guards against.
+
+  it("returns the explicit keyfile path (SA or authorized_user) when set", () => {
+    expect(resolveCredentialSource({ GOOGLE_APPLICATION_CREDENTIALS: "/keys/sa.json" })).toBe(
+      "/keys/sa.json",
+    );
+  });
+
+  it("trims surrounding whitespace/quotes on the path", () => {
+    expect(
+      resolveCredentialSource({ GOOGLE_APPLICATION_CREDENTIALS: '  "/keys/sa.json"  ' }),
+    ).toBe("/keys/sa.json");
+  });
+
+  it("throws a LOUD error when GOOGLE_APPLICATION_CREDENTIALS is unset (no silent ADC fallthrough)", () => {
+    expect(() => resolveCredentialSource({})).toThrow(/GOOGLE_APPLICATION_CREDENTIALS/);
+  });
+
+  it("throws when the var is blank/whitespace-only", () => {
+    expect(() => resolveCredentialSource({ GOOGLE_APPLICATION_CREDENTIALS: "   " })).toThrow(
+      /GOOGLE_APPLICATION_CREDENTIALS/,
+    );
+  });
+
+  it("the loud error names BOTH the service-account path AND the `auth` OAuth onboarding subcommand", () => {
+    // The error must onboard the user to either recommended path — a bare
+    // "credentials missing" is not enough. Name the SA option and the `auth`
+    // helper explicitly so the operator knows both ways forward.
+    let msg = "";
+    try {
+      resolveCredentialSource({});
+    } catch (e) {
+      msg = (e as Error).message;
+    }
+    expect(msg).toMatch(/service account/i);
+    expect(msg).toMatch(/\bauth\b/); // the `auth` subcommand
   });
 });
 
