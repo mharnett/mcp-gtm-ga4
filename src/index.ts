@@ -19,18 +19,36 @@ import { checkForUpdate } from "mcp-updatenotifier";
 import v8 from "v8";
 import { createServer } from "http";
 import { URL } from "url";
+import { randomBytes } from "crypto";
+import {
+  generateCodeVerifier,
+  computeCodeChallenge,
+  buildLoopbackRedirectUri,
+} from "./pkce.js";
+import {
+  OAUTH_SCOPE,
+  OAUTH_TOKEN_URL,
+  buildAuthUrl,
+  buildTokenExchangeBody,
+  requireClientCreds,
+  classifyCallbackRequest,
+  resolveAuthMode,
+  resolveCredentialSource,
+} from "./authFlow.js";
 
 // ============================================
-// AUTH SUBCOMMAND
+// AUTH SUBCOMMAND (OPTIONAL user-OAuth onboarding path)
 // ============================================
+// PRIMARY auth is a service account via GOOGLE_APPLICATION_CREDENTIALS (see the
+// runtime GtmGa4Manager below and README). This subcommand is the OPTIONAL
+// user-OAuth path for people without a service account: it runs Google's
+// installed-app loopback flow (hardened with PKCE S256), then writes an
+// `authorized_user` credential file that plugs into the SAME
+// GOOGLE_APPLICATION_CREDENTIALS runtime path. The OAuth scope comes from
+// config.json (oauth.scope) via authFlow's OAUTH_SCOPE, the SAME source the
+// standalone get-refresh-token.cjs helper uses — so they never drift.
 
-const OAUTH_SCOPES = [
-  "https://www.googleapis.com/auth/tagmanager.edit.containers",
-  "https://www.googleapis.com/auth/tagmanager.edit.containerversions",
-  "https://www.googleapis.com/auth/tagmanager.readonly",
-  "https://www.googleapis.com/auth/analytics.readonly",
-  "https://www.googleapis.com/auth/analytics.edit",
-];
+const OAUTH_CALLBACK_PORT = Number(process.env.OAUTH_CALLBACK_PORT || 8095);
 
 // ============================================
 // ENV VAR TRIMMING
@@ -38,77 +56,87 @@ const OAUTH_SCOPES = [
 
 const envTrimmed = (key: string): string => (process.env[key] || "").trim().replace(/^["']|["']$/g, "");
 
-// OAuth client for the "auth" subcommand.
-// Set via env vars or pass a GCP OAuth keys JSON file via --keys.
-const OAUTH_CLIENT_ID = envTrimmed("GOOGLE_CLIENT_ID");
-const OAUTH_CLIENT_SECRET = envTrimmed("GOOGLE_CLIENT_SECRET");
-
 async function runAuth(): Promise<void> {
   const args = process.argv.slice(3); // after "auth"
   let outputPath = "";
-  let keysPath = "";
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--output" || args[i] === "-o") outputPath = args[++i];
-    if (args[i] === "--keys" || args[i] === "-k") keysPath = args[++i];
   }
   if (!outputPath) {
-    console.error("Usage: node dist/index.js auth --output <path> [--keys <oauth-keys.json>]");
-    console.error("Example: node dist/index.js auth --output ~/.config/google-oauth/bluerose-gtm.json --keys ~/.config/google-oauth/gcp-oauth.keys.json");
-    console.error("\nOAuth client credentials can be provided via:");
-    console.error("  --keys <file>          GCP OAuth keys JSON (has installed.client_id/client_secret)");
-    console.error("  GOOGLE_CLIENT_ID       Environment variable");
-    console.error("  GOOGLE_CLIENT_SECRET   Environment variable");
+    console.error("Usage: node dist/index.js auth --output <path>");
+    console.error("Example: node dist/index.js auth --output ./gtm-ga4-credentials.json");
+    console.error("\nProvide your OWN Google OAuth client (Desktop app type) via env vars:");
+    console.error("  GOOGLE_CLIENT_ID       Environment variable (required)");
+    console.error("  GOOGLE_CLIENT_SECRET   Environment variable (required)");
+    console.error("\nThe resulting file is an authorized_user credential — point");
+    console.error("GOOGLE_APPLICATION_CREDENTIALS at it in your .mcp.json.");
     process.exit(1);
   }
 
-  // Resolve OAuth client credentials: --keys file > env vars
-  let clientId = OAUTH_CLIENT_ID;
-  let clientSecret = OAUTH_CLIENT_SECRET;
-  if (keysPath) {
-    try {
-      const keysJson = JSON.parse(readFileSync(keysPath, "utf-8"));
-      const installed = keysJson.installed || keysJson.web;
-      if (!installed?.client_id || !installed?.client_secret) {
-        console.error("Keys file must contain installed.client_id and installed.client_secret");
-        process.exit(1);
-      }
-      clientId = installed.client_id;
-      clientSecret = installed.client_secret;
-    } catch (err: any) {
-      console.error(`Failed to read keys file: ${err.message}`);
-      process.exit(1);
-    }
-  }
-  if (!clientId || !clientSecret) {
-    console.error("OAuth client credentials required. Provide --keys <file> or set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET env vars.");
+  // Resolve OAuth client credentials from env only (no shared/local keyfile).
+  let clientId: string;
+  let clientSecret: string;
+  try {
+    ({ clientId, clientSecret } = requireClientCreds(process.env));
+  } catch (err: any) {
+    console.error(err.message);
     process.exit(1);
   }
 
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, "http://localhost:8095/oauth2callback");
-
-  const authUrl = oauth2Client.generateAuthUrl({
-    access_type: "offline",
-    scope: OAUTH_SCOPES,
-    prompt: "consent", // Force consent to ensure refresh token is issued
-  });
+  const redirectUri = buildLoopbackRedirectUri(OAUTH_CALLBACK_PORT);
+  const state = randomBytes(16).toString("hex");
+  const codeVerifier = generateCodeVerifier();
+  const codeChallenge = computeCodeChallenge(codeVerifier);
+  const authUrl = buildAuthUrl({ clientId, redirectUri, state, codeChallenge, scope: OAUTH_SCOPE });
 
   // Start local server to catch the redirect
   return new Promise((resolve, reject) => {
     const srv = createServer(async (req, res) => {
-      const url = new URL(req.url!, `http://localhost:8095`);
-      if (url.pathname !== "/oauth2callback") {
+      const url = new URL(req.url!, redirectUri);
+      const decision = classifyCallbackRequest(url.pathname, url.searchParams, state);
+      if (decision.kind === "not-found") {
         res.writeHead(404);
         res.end("Not found");
         return;
       }
-      const code = url.searchParams.get("code");
-      if (!code) {
+      if (decision.kind === "denied") {
         res.writeHead(400);
-        res.end("No authorization code received");
+        res.end("Authorization denied. You can close this tab.");
+        srv.close();
+        reject(new Error(`OAuth denied: ${decision.error}`));
         return;
       }
+      if (decision.kind === "ignore") {
+        // Stray hit on /callback with no code/error (favicon/preflight). Do NOT
+        // treat as CSRF or tear down — the real redirect may still be coming.
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (decision.kind === "csrf") {
+        res.writeHead(400);
+        res.end("State mismatch. Possible CSRF. Re-run the command.");
+        srv.close();
+        reject(new Error("OAuth state mismatch -- possible CSRF"));
+        return;
+      }
+      const code = decision.code;
       try {
-        const { tokens } = await oauth2Client.getToken(code);
+        const resp = await fetch(OAUTH_TOKEN_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: buildTokenExchangeBody({ code, clientId, clientSecret, redirectUri, codeVerifier }),
+        });
+        const tokens = (await resp.json()) as { refresh_token?: string; error?: string; error_description?: string };
+        if (!resp.ok || tokens.error) {
+          throw new Error(`Token exchange failed: ${tokens.error_description || tokens.error || resp.statusText}`);
+        }
+        if (!tokens.refresh_token) {
+          throw new Error(
+            "Google did not return a refresh token. Revoke prior consent at " +
+              "https://myaccount.google.com/permissions and re-run.",
+          );
+        }
         const credentialJson = {
           type: "authorized_user",
           client_id: clientId,
@@ -120,24 +148,25 @@ async function runAuth(): Promise<void> {
         const outDir = dirname(outputPath);
         if (!existsSync(outDir)) mkdirSync(outDir, { recursive: true });
 
-        writeFileSync(outputPath, JSON.stringify(credentialJson, null, 2));
+        writeFileSync(outputPath, JSON.stringify(credentialJson, null, 2), { mode: 0o600 });
         console.error(`\n✓ Credentials saved to: ${outputPath}`);
-        console.error(`  Use this in your .mcp.json as GOOGLE_APPLICATION_CREDENTIALS`);
+        console.error(`  Point GOOGLE_APPLICATION_CREDENTIALS at this file in your .mcp.json`);
 
         res.writeHead(200, { "Content-Type": "text/html" });
         res.end("<h2>Authentication successful!</h2><p>You can close this tab and return to your terminal.</p>");
         srv.close();
         resolve();
       } catch (err: any) {
+        // Do NOT echo the raw token response — it may contain an access_token.
         console.error("Token exchange failed:", err.message);
         res.writeHead(500);
-        res.end("Token exchange failed: " + err.message);
+        res.end("Token exchange failed. See terminal.");
         srv.close();
         reject(err);
       }
     });
 
-    srv.listen(8095, () => {
+    srv.listen(OAUTH_CALLBACK_PORT, "127.0.0.1", () => {
       console.error("\nOpening browser for Google authentication...");
       console.error(`If the browser doesn't open, visit:\n${authUrl}\n`);
       // Open browser cross-platform
@@ -147,8 +176,10 @@ async function runAuth(): Promise<void> {
   });
 }
 
-// Handle auth subcommand before anything else
-if (process.argv[2] === "auth") {
+// Handle auth subcommand before anything else. The mode decision goes through
+// the tested resolveAuthMode() abstraction (imported from authFlow) so the live
+// dispatch and the unit tests can't drift on what counts as the `auth` command.
+if (resolveAuthMode(process.argv.slice(2)) === "oauth") {
   runAuth().then(() => process.exit(0)).catch(() => process.exit(1));
 } else {
 
@@ -220,9 +251,15 @@ const GTM_CONTAINER_PATH = `accounts/${GTM_ACCOUNT_ID}/containers/${GTM_CONTAINE
 const GTM_WORKSPACE_ID_OVERRIDE = envTrimmed("GTM_SANDBOX_WORKSPACE_ID");
 const GA4_PROPERTY_ID = envTrimmed("GA4_PROPERTY_ID");
 const SERVER_NAME = process.env.MCP_SERVER_NAME || "mcp-gtm-ga4";
-// Resolve relative credential paths to absolute (CWD is unpredictable in MCP hosts)
-const __rawCredsFile = envTrimmed("GOOGLE_APPLICATION_CREDENTIALS");
-const CREDS_FILE = __rawCredsFile && !isAbsolute(__rawCredsFile) ? resolve(__rawCredsFile) : __rawCredsFile;
+// Resolve the credential source. resolveCredentialSource() enforces the auth
+// precedence: an explicitly-configured GOOGLE_APPLICATION_CREDENTIALS keyfile
+// (service-account JSON — the recommended unattended path — or the
+// authorized_user keyfile the `auth` subcommand writes) is used; when NONE is
+// set it throws LOUDLY instead of letting GoogleAuth silently fall through to
+// Application Default Credentials (no silent machine-local default). Relative
+// paths are then resolved to absolute (CWD is unpredictable in MCP hosts).
+const __rawCredsFile = resolveCredentialSource(process.env);
+const CREDS_FILE = isAbsolute(__rawCredsFile) ? __rawCredsFile : resolve(__rawCredsFile);
 
 // ============================================
 // GTM + GA4 MANAGER
@@ -237,7 +274,9 @@ class GtmGa4Manager {
   private getGtmService(): tagmanager_v2.Tagmanager {
     if (!this.gtmService) {
       const auth = new google.auth.GoogleAuth({
-        keyFile: CREDS_FILE || undefined,
+        // CREDS_FILE is guaranteed non-empty (resolveCredentialSource throws
+        // otherwise) — never pass undefined, which would trigger silent ADC.
+        keyFile: CREDS_FILE,
         scopes: [
           "https://www.googleapis.com/auth/tagmanager.edit.containers",
           "https://www.googleapis.com/auth/tagmanager.edit.containerversions",
@@ -254,8 +293,7 @@ class GtmGa4Manager {
 
   private getDataClient(): InstanceType<typeof BetaAnalyticsDataClient> {
     if (!this.dataClient) {
-      const opts: any = {};
-      if (CREDS_FILE) opts.keyFile = CREDS_FILE;
+      const opts: any = { keyFile: CREDS_FILE };
       opts.scopes = ["https://www.googleapis.com/auth/analytics.readonly"];
       this.dataClient = new BetaAnalyticsDataClient(opts);
     }
@@ -264,8 +302,7 @@ class GtmGa4Manager {
 
   private getAdminClient(): InstanceType<typeof AnalyticsAdminServiceClient> {
     if (!this.adminClient) {
-      const opts: any = {};
-      if (CREDS_FILE) opts.keyFile = CREDS_FILE;
+      const opts: any = { keyFile: CREDS_FILE };
       opts.scopes = [
         "https://www.googleapis.com/auth/analytics.readonly",
         "https://www.googleapis.com/auth/analytics.edit",

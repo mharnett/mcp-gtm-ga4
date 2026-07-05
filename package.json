@@ -5,7 +5,8 @@
   "description": "MCP server for Google Tag Manager + GA4 with sandbox safety, consent auditing, and multi-client support.",
   "main": "dist/index.js",
   "bin": {
-    "mcp-gtm-ga4": "dist/index.js"
+    "mcp-gtm-ga4": "dist/index.js",
+    "mcp-gtm-ga4-oauth": "get-refresh-token.cjs"
   },
   "types": "dist/index.d.ts",
   "type": "module",
@@ -19,14 +20,19 @@
     "build": "tsc && node -e \"fs=require('fs');cp=require('child_process');sha=cp.execSync('git rev-parse --short HEAD 2>/dev/null||echo unknown').toString().trim();fs.writeFileSync('dist/build-info.json',JSON.stringify({sha,builtAt:new Date().toISOString()}))\"",
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
+    "pretest": "npm run build",
     "test": "vitest run",
     "smoke": "scripts/healthcheck.sh"
   },
   "files": [
-    "dist",
+    "dist/**/*.js",
+    "dist/**/*.d.ts",
+    "dist/build-info.json",
+    "!dist/**/*.test.*",
     "README.md",
     "LICENSE",
-    "config.example.json"
+    "config.example.json",
+    "get-refresh-token.cjs"
   ],
   "author": "drak-marketing",
   "license": "MIT",
