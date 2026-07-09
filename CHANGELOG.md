@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.2.0](https://github.com/mharnett/mcp-gtm-ga4/compare/v1.1.0...v1.2.0) (2026-07-09)
+
+
+### Features
+
+* **oauth:** publishable PKCE + dual service-account/OAuth decouple ([#5](https://github.com/mharnett/mcp-gtm-ga4/issues/5)) ([55300e5](https://github.com/mharnett/mcp-gtm-ga4/commit/55300e5bd49a3b10295fb7f7dd2e7f303639a1da))
+
+
+### Bug Fixes
+
+* **ci:** regenerate lockfile to resolve mcp-updatenotifier from the registry ([#4](https://github.com/mharnett/mcp-gtm-ga4/issues/4)) ([efa11b2](https://github.com/mharnett/mcp-gtm-ga4/commit/efa11b266ba864158e98e1bb4fee67b93ba5891f))
+* depend on mcp-updatenotifier from the registry (^1.0.0) ([#3](https://github.com/mharnett/mcp-gtm-ga4/issues/3)) ([a57d7d9](https://github.com/mharnett/mcp-gtm-ga4/commit/a57d7d9573c85439caf70609db8ab3a398ecbd42))
+
 ## [1.1.0](https://github.com/mharnett/mcp-gtm-ga4/compare/v1.0.0...v1.1.0) (2026-07-09)
 
 
