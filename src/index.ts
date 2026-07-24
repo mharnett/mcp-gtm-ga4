@@ -9,11 +9,14 @@ import { google, tagmanager_v2 } from "googleapis";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
 import { AnalyticsAdminServiceClient } from "@google-analytics/admin";
 import { GtmAuthError, GtmRateLimitError, GtmServiceError, classifyError } from "./errors.js";
-// NOTE: no runtime sandbox guard exists. GTM publish operations rely entirely on
-// the write-gate (env-gated mutation tools + sandbox workspace resolution at
-// startup). If a stronger guard is wanted, that's a separate design decision.
+// Runtime write gate (writeGate.ts, backed by the shared mcp-write-gate
+// package): mutating tools (create/update/delete/version/custom-dimension) are
+// hidden from tools/list and refused at call time unless GTM_GA4_MCP_WRITE=true
+// is set in this server's environment. Sandbox workspace resolution at startup
+// additionally scopes which workspace mutations would target when enabled.
 import { classifyTag } from "./consent.js";
 import { tools } from "./tools.js";
+import { filterTools, assertWriteAllowed } from "./writeGate.js";
 import { withResilience, safeResponse, logger } from "./resilience.js";
 import { checkForUpdate } from "mcp-updatenotifier";
 import v8 from "v8";
@@ -570,13 +573,14 @@ class GtmGa4Manager {
 const manager = new GtmGa4Manager();
 
 const server = new Server({ name: process.env.MCP_SERVER_NAME || __cliPkg.name, version: __cliPkg.version }, { capabilities: { tools: {} } });
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools }));
+server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: filterTools(tools) }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   const ok = (data: any) => ({ content: [{ type: "text" as const, text: JSON.stringify(safeResponse(data, name), null, 2) }] });
 
   try {
+    assertWriteAllowed(name);
     switch (name) {
       case "gtm_get_client_context": return ok({
         server: __cliPkg.name,
