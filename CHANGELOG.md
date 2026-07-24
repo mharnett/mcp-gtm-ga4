@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/mharnett/mcp-gtm-ga4/compare/v1.2.0...v1.3.0) (2026-07-24)
+
+
+### Features
+
+* write gate via mcp-write-gate — read-only by default ([1908241](https://github.com/mharnett/mcp-gtm-ga4/commit/190824172e87831786e17c73a2e845c93ebc4082))
+
 ## [1.2.0](https://github.com/mharnett/mcp-gtm-ga4/compare/v1.1.0...v1.2.0) (2026-07-09)
 
 
