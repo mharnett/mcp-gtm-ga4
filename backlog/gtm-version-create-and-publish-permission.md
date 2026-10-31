@@ -1,14 +1,14 @@
 # GTM token scope blocks version-create + publish
 
 **Status:** Backlog
-**Discovered:** 2026-04-17 (sandbox version create) and confirmed 2026-04-22 (Survey Measure launch publish)
+**Discovered:** 2026-04-17 (sandbox version create) and confirmed 2026-04-22 (a client container launch publish)
 **Blocking:** any programmatic GTM publish flow
 
 ## Problem
 
 `mcp__gtm-ga4__gtm_create_version` returns `"Not found or permission denied."` from the Google Tag Manager API. Read + edit operations on the same workspace work fine (`list_tags`, `create_tag`, `update_tag`, `audit_consent`, `preview`) — only version creation (and by extension, publish) is denied.
 
-Likely cause: the OAuth credential the MCP uses (`/Users/mark/.config/google-oauth/bluerose-gtm.json` for the Survey Measure container) was minted with a token scope that includes `tagmanager.edit.containers` but not `tagmanager.publish` or `tagmanager.edit.containerversions`.
+Likely cause: the OAuth credential the MCP uses (a per-client OAuth file under `~/.config/google-oauth/`) was minted with a token scope that includes `tagmanager.edit.containers` but not `tagmanager.publish` or `tagmanager.edit.containerversions`.
 
 There's also no `gtm_publish_version` tool in the MCP — only `gtm_create_version` (which "Does NOT publish"). So the publish path needs a second tool too.
 
@@ -38,4 +38,4 @@ Re-auth: 5 min. Tool additions: ~150 LOC, ~6 TDD cycles. ~2 hours total.
 
 ## Workaround until fixed
 
-Publish via the GTM web UI: Submit → Publish. Mark did this for the Survey Measure v1.0 publish on 2026-04-22.
+Publish via the GTM web UI: Submit → Publish. Mark did this for a client container publish on 2026-04-22.

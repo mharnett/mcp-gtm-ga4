@@ -4,8 +4,7 @@ import { createWriteGate } from "mcp-write-gate";
  * Tools that mutate GTM/GA4 state. These are hidden from the tool list and
  * refused at call time unless GTM_GA4_MCP_WRITE=true.
  *
- * This server is launched by multiple client configs (flowspace-gtm,
- * neon-one-gtm, bluerose, imvu) — none of which set the flag — so every
+ * This server is launched by multiple per-client configs — none of which set the flag — so every
  * session is read-only by default. Enabling writes is a deliberate,
  * per-session opt-in via the env var.
  *
