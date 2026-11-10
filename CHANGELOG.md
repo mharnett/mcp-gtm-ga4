@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/mharnett/mcp-gtm-ga4/compare/v1.3.0...v1.3.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* remove client names from docs, comments and healthcheck wrapper (5a899a4)
+
 ## [1.3.0](https://github.com/mharnett/mcp-gtm-ga4/compare/v1.2.0...v1.3.0) (2026-07-24)
 
 
