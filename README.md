@@ -57,7 +57,7 @@ GA4_PROPERTY_ID = "YOUR_GA4_PROPERTY_ID"
 
 ## Features
 
-- **14 tools** spanning GTM workspace management (tags, triggers, variables), consent compliance auditing, workspace preview/versioning, and GA4 reporting
+- **18 tools** (11 read, 7 write-gated) spanning GTM workspace management (tags, triggers, variables), consent compliance auditing, workspace preview/versioning, and GA4 reporting. The server starts read-only; set `GTM_GA4_MCP_WRITE=true` to expose the 7 write tools (`gtm_create_tag`, `gtm_update_tag`, `gtm_create_variable`, `gtm_update_variable`, `gtm_delete_variable`, `gtm_create_version`, `gtm_ga4_create_custom_dimension`)
 - **Sandbox safety** -- all write operations verify they target the resolved workspace, refusing to write to non-sandbox workspaces
 - **Multi-client support** -- configure per-client via environment variables
 - **Auto-detects Default Workspace ID** -- no need to manually specify workspace IDs unless using a custom sandbox
@@ -194,11 +194,17 @@ npx mcp-gtm-ga4
 
 ### Workspace sandbox protection
 
-All write operations (`gtm_update_tag`, `gtm_create_tag`, `gtm_preview`, `gtm_create_version`) verify they target the resolved workspace before executing. If a request attempts to write to a different workspace, the server returns a `SafetyError` and blocks the operation.
+All write operations (`gtm_create_tag`, `gtm_update_tag`, `gtm_create_variable`, `gtm_update_variable`, `gtm_delete_variable`, `gtm_create_version`) verify they target the resolved workspace before executing. If a request attempts to write to a different workspace, the server returns a `SafetyError` and blocks the operation.
 
 This prevents accidental production changes when the MCP server is configured against a sandbox workspace.
 
 ## Tools
+
+### Status
+
+| Tool | Description |
+|---|---|
+| `gtm_get_client_context` | Health check and status overview: GTM container path, workspace ID, GA4 property ID and server version |
 
 ### GTM Tags
 
@@ -215,6 +221,10 @@ This prevents accidental production changes when the MCP server is configured ag
 |---|---|
 | `gtm_list_triggers` | List all triggers (ID, name, type) |
 | `gtm_list_variables` | List all variables (ID, name, type) |
+| `gtm_get_variable` | Get full details of a single variable by ID |
+| `gtm_create_variable` | Create a new variable in the sandbox workspace |
+| `gtm_update_variable` | Update a variable (fetch, merge, save) in the sandbox workspace |
+| `gtm_delete_variable` | Delete a variable from the sandbox workspace (destructive) |
 
 ### GTM Consent
 
