@@ -2,6 +2,59 @@
 
 MCP server for Google Tag Manager and GA4 -- tag management, consent auditing, workspace versioning, and analytics reporting via Claude.
 
+## Quick install
+
+Claude Code, one line (replace the placeholder values with your own; see [Configuration](#configuration) and [Authentication](#authentication) for how to get them):
+
+```bash
+claude mcp add --env GOOGLE_APPLICATION_CREDENTIALS=/path/to/credentials.json --env GTM_ACCOUNT_ID=YOUR_GTM_ACCOUNT_ID --env GTM_CONTAINER_ID=YOUR_GTM_CONTAINER_ID --env GA4_PROPERTY_ID=YOUR_GA4_PROPERTY_ID --transport stdio mcp-gtm-ga4 -- npx -y mcp-gtm-ga4
+```
+
+All write operations are sandbox-checked: the server refuses to write to a workspace that is not the resolved sandbox workspace.
+
+<details>
+<summary>Claude Desktop</summary>
+
+Add this to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS), then fully quit and restart Claude Desktop:
+
+```json
+{
+  "mcpServers": {
+    "mcp-gtm-ga4": {
+      "command": "npx",
+      "args": ["-y", "mcp-gtm-ga4"],
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/credentials.json",
+        "GTM_ACCOUNT_ID": "YOUR_GTM_ACCOUNT_ID",
+        "GTM_CONTAINER_ID": "YOUR_GTM_CONTAINER_ID",
+        "GA4_PROPERTY_ID": "YOUR_GA4_PROPERTY_ID"
+      }
+    }
+  }
+}
+```
+
+</details>
+
+<details>
+<summary>Codex CLI</summary>
+
+Add this to `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.mcp-gtm-ga4]
+command = "npx"
+args = ["-y", "mcp-gtm-ga4"]
+
+[mcp_servers.mcp-gtm-ga4.env]
+GOOGLE_APPLICATION_CREDENTIALS = "/path/to/credentials.json"
+GTM_ACCOUNT_ID = "YOUR_GTM_ACCOUNT_ID"
+GTM_CONTAINER_ID = "YOUR_GTM_CONTAINER_ID"
+GA4_PROPERTY_ID = "YOUR_GA4_PROPERTY_ID"
+```
+
+</details>
+
 ## Features
 
 - **14 tools** spanning GTM workspace management (tags, triggers, variables), consent compliance auditing, workspace preview/versioning, and GA4 reporting
