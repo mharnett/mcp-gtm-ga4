@@ -3,7 +3,7 @@
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
-import { readFileSync, existsSync, writeFileSync, mkdirSync } from "fs";
+import { readFileSync, existsSync, writeFileSync, mkdirSync, realpathSync } from "fs";
 import { join, dirname, resolve, isAbsolute } from "path";
 import { google, tagmanager_v2 } from "googleapis";
 import { BetaAnalyticsDataClient } from "@google-analytics/data";
@@ -21,7 +21,7 @@ import { withResilience, safeResponse, logger } from "./resilience.js";
 import { checkForUpdate } from "mcp-updatenotifier";
 import v8 from "v8";
 import { createServer } from "http";
-import { URL } from "url";
+import { URL, fileURLToPath } from "url";
 import { randomBytes } from "crypto";
 import {
   generateCodeVerifier,
@@ -182,16 +182,39 @@ async function runAuth(): Promise<void> {
 // Handle auth subcommand before anything else. The mode decision goes through
 // the tested resolveAuthMode() abstraction (imported from authFlow) so the live
 // dispatch and the unit tests can't drift on what counts as the `auth` command.
+// The MCP server is built inside the non-auth branch below. It is exported so
+// tests can connect an in-memory transport and drive the real tools/list and
+// tools/call handlers; main() is the only production caller of connect().
+let exportedServer: Server | undefined;
+export { exportedServer as server };
+
+// Only auto-start the server when this module is executed directly (as the
+// CLI entrypoint, including through the npx/bin symlink), not when a test
+// imports it. Comparing the resolved module path to process.argv[1] is the
+// ESM equivalent of the CommonJS `require.main === module` guard.
+function isMainModule(): boolean {
+  const entry = process.argv[1];
+  if (!entry) return false;
+  try {
+    return fileURLToPath(import.meta.url) === realpathSync(entry);
+  } catch {
+    return false;
+  }
+}
+
 if (resolveAuthMode(process.argv.slice(2)) === "oauth") {
   runAuth().then(() => process.exit(0)).catch(() => process.exit(1));
 } else {
 
 // CLI package info
-const __cliPkg = JSON.parse(readFileSync(join(dirname(new URL(import.meta.url).pathname), "..", "package.json"), "utf-8"));
+// fileURLToPath, not URL.pathname: pathname keeps %20 for spaces and yields
+// "/D:/..." on Windows, so the package.json read failed and the server could
+// not start from such a path.
+const __cliPkg = JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), "..", "package.json"), "utf-8"));
 
 // Log build fingerprint
 try {
-  const d = dirname(new URL(import.meta.url).pathname);
+  const d = dirname(fileURLToPath(import.meta.url));
   const bi = JSON.parse(readFileSync(join(d, "build-info.json"), "utf-8"));
   console.error(`[build] SHA: ${bi.sha} (${bi.builtAt})`);
 } catch {
@@ -380,7 +403,7 @@ class GtmGa4Manager {
       const body = JSON.parse(tagJson);
       const resp = await svc.accounts.containers.workspaces.tags.create({ parent: wp, requestBody: body });
       return { created: resp.data.name, tagId: resp.data.tagId };
-    }, "gtm_create_tag");
+    }, "gtm_create_tag", { idempotent: false });
   }
 
   async listTriggers(): Promise<any> {
@@ -433,7 +456,7 @@ class GtmGa4Manager {
       const body = JSON.parse(variableJson);
       const resp = await svc.accounts.containers.workspaces.variables.create({ parent: wp, requestBody: body });
       return { created: resp.data.name, variableId: resp.data.variableId };
-    }, "gtm_create_variable");
+    }, "gtm_create_variable", { idempotent: false });
   }
 
   async deleteVariable(variableId: string): Promise<any> {
@@ -494,7 +517,7 @@ class GtmGa4Manager {
       });
       const v = resp.data.containerVersion || {};
       return { versionId: v.containerVersionId, name: v.name, path: v.path };
-    }, "gtm_create_version");
+    }, "gtm_create_version", { idempotent: false });
   }
 
   // ── GA4 Reports ──
@@ -562,7 +585,7 @@ class GtmGa4Manager {
         customDimension: { parameterName: opts.parameterName, displayName: opts.displayName, scope: (opts.scope?.toUpperCase() === "USER" ? "USER" : "EVENT") as any, description: opts.description || "" },
       });
       return { created: (result as any).displayName, parameter_name: (result as any).parameterName, scope: String((result as any).scope) };
-    }, "ga4_create_custom_dimension");
+    }, "ga4_create_custom_dimension", { idempotent: false });
   }
 }
 
@@ -573,6 +596,7 @@ class GtmGa4Manager {
 const manager = new GtmGa4Manager();
 
 const server = new Server({ name: process.env.MCP_SERVER_NAME || __cliPkg.name, version: __cliPkg.version }, { capabilities: { tools: {} } });
+exportedServer = server;
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: filterTools(tools) }));
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -653,6 +677,8 @@ process.on("unhandledRejection", (reason) => {
   console.error("[error] Unhandled promise rejection:", reason);
 });
 
-main().catch(console.error);
+if (isMainModule()) {
+  main().catch(console.error);
+}
 
 } // end else (non-auth mode)
