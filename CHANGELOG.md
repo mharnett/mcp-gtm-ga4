@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.3.2](https://github.com/mharnett/mcp-gtm-ga4/compare/v1.3.1...v1.3.2) (2026-11-22)
+
+
+### Bug Fixes
+
+* check GA4_PROPERTY_ID before it is spliced into GA4 requests ([#21](https://github.com/mharnett/mcp-gtm-ga4/issues/21)) ([78c1ed3](https://github.com/mharnett/mcp-gtm-ga4/commit/78c1ed3fb4e93a1f0a04a0e59e13b335678e5a52))
+* refuse malformed GTM ids before any call; send deletes once ([#18](https://github.com/mharnett/mcp-gtm-ga4/issues/18)) ([fc5b6ae](https://github.com/mharnett/mcp-gtm-ga4/commit/fc5b6ae239899ef442390b4bcb3a2a03f3472955))
+* send creates once; test the write gate at the CallTool dispatch ([#16](https://github.com/mharnett/mcp-gtm-ga4/issues/16)) ([d04b3ca](https://github.com/mharnett/mcp-gtm-ga4/commit/d04b3cab1427c5b6c23175960baff03c4f7b0934))
+* send update PUTs once at the library layer ([#20](https://github.com/mharnett/mcp-gtm-ga4/issues/20)) ([86ca2ac](https://github.com/mharnett/mcp-gtm-ga4/commit/86ca2ac98646f65e5e32a3f415fd095c8315ba01))
+
 ## [1.3.1](https://github.com/mharnett/mcp-gtm-ga4/compare/v1.3.0...v1.3.1) (2026-11-10)
 
 
