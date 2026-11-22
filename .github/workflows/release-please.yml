@@ -6,6 +6,12 @@ name: release-please
 # Each time it opens or updates the Release PR, it dispatches test.yml on
 # that PR's branch so the required test checks report on the PR.
 #
+# Manifest mode: the last-released version is pinned in
+# .release-please-manifest.json, and release-please-config.json lists
+# server.json (the MCP registry listing) in extra-files so each release
+# bumps its versions too. The action reads extra-files only in this mode.
+# include-component-in-tag is false there, so tags stay vX.Y.Z as before.
+#
 # Conventional commit prefixes that drive version bumps:
 #   feat:  → minor bump
 #   fix:   → patch bump
@@ -30,7 +36,8 @@ jobs:
       - uses: googleapis/release-please-action@v4
         id: release
         with:
-          release-type: node
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
       # GITHUB_TOKEN events don't trigger other workflows, except
       # workflow_dispatch. Publishing stays in publish.yml because npm's
       # Trusted Publisher is registered to that filename.
