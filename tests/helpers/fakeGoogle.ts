@@ -21,35 +21,41 @@ export const WORKSPACE_PATH = `accounts/${FAKE_ENV.GTM_ACCOUNT_ID}/containers/${
 export interface RecordedCall {
   method: string;
   params: any;
+  /** The per-call options argument (gaxios / gax call options), when one was passed. */
+  options?: any;
 }
 
 export const recorder = {
   calls: [] as RecordedCall[],
   constructed: 0,
   fail: null as null | (() => Error),
+  /** What workspaces.list returns; startup auto-detection reads it when GTM_SANDBOX_WORKSPACE_ID is unset. */
+  workspaces: [] as Array<{ name?: string; workspaceId?: string }>,
   reset() {
     this.calls.length = 0;
     this.constructed = 0;
     this.fail = null;
+    this.workspaces = [];
   },
   callsTo(method: string) {
     return this.calls.filter((c) => c.method === method);
   },
 };
 
-function call(method: string, params: any, data: unknown) {
-  recorder.calls.push({ method, params });
+function call(method: string, params: any, data: unknown, options?: unknown) {
+  recorder.calls.push(options === undefined ? { method, params } : { method, params, options });
   if (recorder.fail) return Promise.reject(recorder.fail());
   return Promise.resolve(data);
 }
 
-const gtm = (method: string, data: (p: any) => unknown) => (params: any) => call(`gtm.${method}`, params, { data: data(params) });
+const gtm = (method: string, data: (p: any) => unknown) => (params: any, options?: unknown) =>
+  call(`gtm.${method}`, params, { data: data(params) }, options);
 
 const fakeTagmanager = {
   accounts: {
     containers: {
       workspaces: {
-        list: gtm("workspaces.list", () => ({ workspace: [] })),
+        list: gtm("workspaces.list", () => ({ workspace: recorder.workspaces })),
         quick_preview: gtm("workspaces.quick_preview", () => ({})),
         create_version: gtm("workspaces.create_version", (p) => ({ containerVersion: { containerVersionId: "9", name: p.requestBody.name, path: `${p.path}/versions/9` } })),
         tags: {
@@ -109,8 +115,8 @@ export class FakeAnalyticsAdminServiceClient {
   listCustomDimensions(request: any) {
     return call("ga4.listCustomDimensions", request, [[]]);
   }
-  createCustomDimension(request: any) {
+  createCustomDimension(request: any, options?: unknown) {
     const d = request.customDimension;
-    return call("ga4.createCustomDimension", request, [{ displayName: d.displayName, parameterName: d.parameterName, scope: d.scope }]);
+    return call("ga4.createCustomDimension", request, [{ displayName: d.displayName, parameterName: d.parameterName, scope: d.scope }], options);
   }
 }

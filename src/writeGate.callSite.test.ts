@@ -135,7 +135,11 @@ describe("write gate open (GTM_GA4_MCP_WRITE=true)", () => {
 
     expect(result.isError).toBeFalsy();
     expect(recorder.callsTo("gtm.tags.create")).toEqual([
-      { method: "gtm.tags.create", params: { parent: WORKSPACE_PATH, requestBody: { name: "Gate test tag", type: "html" } } },
+      {
+        method: "gtm.tags.create",
+        params: { parent: WORKSPACE_PATH, requestBody: { name: "Gate test tag", type: "html" } },
+        options: { retry: false },
+      },
     ]);
   });
 });
