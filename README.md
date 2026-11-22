@@ -88,7 +88,7 @@ Runtime configuration is via environment variables.
 | `GOOGLE_APPLICATION_CREDENTIALS` | Yes | Path to a Google credential JSON key file (service account **or** authorized-user — see Authentication below) |
 | `GTM_ACCOUNT_ID` | Yes | GTM account ID |
 | `GTM_CONTAINER_ID` | Yes | GTM container ID |
-| `GA4_PROPERTY_ID` | Yes | GA4 property ID |
+| `GA4_PROPERTY_ID` | Yes | Numeric GA4 property ID (`123456789` or `properties/123456789`), not the `G-` measurement ID |
 | `GTM_SANDBOX_WORKSPACE_ID` | No | Override workspace ID (auto-detects Default Workspace if omitted) |
 | `MCP_SERVER_NAME` | No | Server name (defaults to package name `mcp-gtm-ga4`) |
 

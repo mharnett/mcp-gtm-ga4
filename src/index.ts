@@ -16,6 +16,7 @@ import { GtmAuthError, GtmRateLimitError, GtmServiceError, classifyError } from 
 // additionally scopes which workspace mutations would target when enabled.
 import { classifyTag } from "./consent.js";
 import { gtmId } from "./ids.js";
+import { parsePropertyId } from "./propertyId.js";
 import { tools } from "./tools.js";
 import { filterTools, assertWriteAllowed } from "./writeGate.js";
 import { withResilience, safeResponse, logger } from "./resilience.js";
@@ -281,7 +282,12 @@ const GTM_CONTAINER_PATH =
   `/containers/${gtmId("container", GTM_CONTAINER_ID, "GTM_CONTAINER_ID")}`;
 const GTM_WORKSPACE_ID_OVERRIDE = envTrimmed("GTM_SANDBOX_WORKSPACE_ID");
 if (GTM_WORKSPACE_ID_OVERRIDE) gtmId("workspace", GTM_WORKSPACE_ID_OVERRIDE, "GTM_SANDBOX_WORKSPACE_ID");
-const GA4_PROPERTY_ID = envTrimmed("GA4_PROPERTY_ID");
+// GA4_PROPERTY_ID is optional (a GTM-only setup leaves it unset), but when set
+// it is checked here, so a measurement ID or a doubled properties/ prefix
+// stops startup instead of reaching Google (see propertyId.ts). The GA4 tools
+// refuse to run without it (ga4Property() below).
+const GA4_PROPERTY_ID_RAW = envTrimmed("GA4_PROPERTY_ID");
+const GA4_PROPERTY_ID = GA4_PROPERTY_ID_RAW ? parsePropertyId(GA4_PROPERTY_ID_RAW) : "";
 const SERVER_NAME = process.env.MCP_SERVER_NAME || "mcp-gtm-ga4";
 // Resolve the credential source. resolveCredentialSource() enforces the auth
 // precedence: an explicitly-configured GOOGLE_APPLICATION_CREDENTIALS keyfile
@@ -558,13 +564,22 @@ class GtmGa4Manager {
     });
   }
 
+  /** The `properties/<id>` every GA4 request names, or a refusal when GA4_PROPERTY_ID is unset. */
+  private ga4Property(): string {
+    if (!GA4_PROPERTY_ID) {
+      throw new Error("GA4_PROPERTY_ID is not set, so the GA4 tools have no property to query. Set it to the numeric GA4 property ID. Nothing was sent.");
+    }
+    return `properties/${GA4_PROPERTY_ID}`;
+  }
+
   async ga4RunReport(options: { dimensions?: string; metrics?: string; startDate?: string; endDate?: string; dimensionFilter?: string; limit?: number }): Promise<any> {
+    const property = this.ga4Property();
     const client = this.getDataClient();
     const dims = (options.dimensions || "eventName").split(",").map(d => ({ name: d.trim() })).filter(d => d.name);
     const mets = (options.metrics || "eventCount").split(",").map(m => ({ name: m.trim() })).filter(m => m.name);
     const startDate = options.startDate || "7daysAgo";
     const endDate = options.endDate || "today";
-    const request: any = { property: `properties/${GA4_PROPERTY_ID}`, dimensions: dims, metrics: mets, dateRanges: [{ startDate, endDate }], limit: options.limit || 100 };
+    const request: any = { property, dimensions: dims, metrics: mets, dateRanges: [{ startDate, endDate }], limit: options.limit || 100 };
     if (options.dimensionFilter?.includes("==")) {
       const [f, v] = options.dimensionFilter.split("==", 2);
       request.dimensionFilter = { filter: { fieldName: f.trim(), stringFilter: { value: v.trim() } } };
@@ -577,10 +592,11 @@ class GtmGa4Manager {
   }
 
   async ga4RealtimeReport(options: { dimensions?: string; metrics?: string; dimensionFilter?: string }): Promise<any> {
+    const property = this.ga4Property();
     const client = this.getDataClient();
     const dims = (options.dimensions || "eventName").split(",").map(d => ({ name: d.trim() })).filter(d => d.name);
     const mets = (options.metrics || "eventCount").split(",").map(m => ({ name: m.trim() })).filter(m => m.name);
-    const request: any = { property: `properties/${GA4_PROPERTY_ID}`, dimensions: dims, metrics: mets };
+    const request: any = { property, dimensions: dims, metrics: mets };
     if (options.dimensionFilter?.includes("==")) {
       const [f, v] = options.dimensionFilter.split("==", 2);
       request.dimensionFilter = { filter: { fieldName: f.trim(), stringFilter: { value: v.trim() } } };
@@ -593,21 +609,23 @@ class GtmGa4Manager {
   }
 
   async ga4ListCustomDimensions(): Promise<any> {
+    const property = this.ga4Property();
     const client = this.getAdminClient();
     return withResilience(async () => {
-      const [dims] = await client.listCustomDimensions({ parent: `properties/${GA4_PROPERTY_ID}` });
+      const [dims] = await client.listCustomDimensions({ parent: property });
       const items = (dims as any[]).map((d: any) => ({ name: d.displayName, parameter_name: d.parameterName, scope: String(d.scope), description: d.description || "" }));
       return { custom_dimensions: items, count: items.length };
     }, "ga4_list_custom_dimensions");
   }
 
   async ga4CreateCustomDimension(opts: { parameterName: string; displayName: string; scope?: string; description?: string }): Promise<any> {
+    const property = this.ga4Property();
     const client = this.getAdminClient();
     return withResilience(async () => {
       // gax retries CreateCustomDimension on UNKNOWN and UNAVAILABLE by
       // default; retry: null turns that off so the create goes out once.
       const [result] = await client.createCustomDimension({
-        parent: `properties/${GA4_PROPERTY_ID}`,
+        parent: property,
         customDimension: { parameterName: opts.parameterName, displayName: opts.displayName, scope: (opts.scope?.toUpperCase() === "USER" ? "USER" : "EVENT") as any, description: opts.description || "" },
       }, { retry: null });
       return { created: (result as any).displayName, parameter_name: (result as any).parameterName, scope: String((result as any).scope) };
