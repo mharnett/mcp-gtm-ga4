@@ -15,6 +15,7 @@ import { GtmAuthError, GtmRateLimitError, GtmServiceError, classifyError } from 
 // is set in this server's environment. Sandbox workspace resolution at startup
 // additionally scopes which workspace mutations would target when enabled.
 import { classifyTag } from "./consent.js";
+import { gtmId } from "./ids.js";
 import { tools } from "./tools.js";
 import { filterTools, assertWriteAllowed } from "./writeGate.js";
 import { withResilience, safeResponse, logger } from "./resilience.js";
@@ -273,8 +274,13 @@ if (!GTM_ACCOUNT_ID || !GTM_CONTAINER_ID) {
     "  See config.example.json for example configuration."
   );
 }
-const GTM_CONTAINER_PATH = `accounts/${GTM_ACCOUNT_ID}/containers/${GTM_CONTAINER_ID}`;
+// Every Tag Manager path is built from these ids, so a malformed one stops
+// startup the same way a missing one does (see ids.ts).
+const GTM_CONTAINER_PATH =
+  `accounts/${gtmId("account", GTM_ACCOUNT_ID, "GTM_ACCOUNT_ID")}` +
+  `/containers/${gtmId("container", GTM_CONTAINER_ID, "GTM_CONTAINER_ID")}`;
 const GTM_WORKSPACE_ID_OVERRIDE = envTrimmed("GTM_SANDBOX_WORKSPACE_ID");
+if (GTM_WORKSPACE_ID_OVERRIDE) gtmId("workspace", GTM_WORKSPACE_ID_OVERRIDE, "GTM_SANDBOX_WORKSPACE_ID");
 const GA4_PROPERTY_ID = envTrimmed("GA4_PROPERTY_ID");
 const SERVER_NAME = process.env.MCP_SERVER_NAME || "mcp-gtm-ga4";
 // Resolve the credential source. resolveCredentialSource() enforces the auth
@@ -290,6 +296,12 @@ const CREDS_FILE = isAbsolute(__rawCredsFile) ? __rawCredsFile : resolve(__rawCr
 // ============================================
 // GTM + GA4 MANAGER
 // ============================================
+
+// googleapis turns gaxios retry on for every call, and gaxios resends GET,
+// PUT and DELETE (not POST) on a 5xx, 408 or 429 up to three times. Writes
+// that must go out once (the creates and the delete) pass this so the library
+// does not resend them underneath withResilience({ idempotent: false }).
+const NO_LIBRARY_RETRY = { retry: false } as const;
 
 class GtmGa4Manager {
   private gtmService: tagmanager_v2.Tagmanager | null = null;
@@ -349,7 +361,7 @@ class GtmGa4Manager {
     const resp = await svc.accounts.containers.workspaces.list({ parent: GTM_CONTAINER_PATH });
     const ws = (resp.data.workspace || []).find(w => w.name === "Default Workspace");
     if (!ws?.workspaceId) throw new Error(`No 'Default Workspace' found in ${GTM_CONTAINER_PATH}`);
-    this.resolvedWorkspaceId = ws.workspaceId;
+    this.resolvedWorkspaceId = gtmId("workspace", ws.workspaceId, `the Default Workspace of ${GTM_CONTAINER_PATH}`);
     return this.resolvedWorkspaceId;
   }
 
@@ -373,18 +385,22 @@ class GtmGa4Manager {
     }, "gtm_list_tags");
   }
 
-  async getTag(tagId: string): Promise<any> {
+  // tag_id and variable_id are checked by gtmId() before the client or path
+  // exists, so a malformed id never reaches Tag Manager.
+  async getTag(tagId: unknown): Promise<any> {
+    const id = gtmId("tag", tagId);
     const svc = this.getGtmService();
-    const path = `${await this.getWorkspacePath()}/tags/${tagId}`;
+    const path = `${await this.getWorkspacePath()}/tags/${id}`;
     return withResilience(async () => {
       const resp = await svc.accounts.containers.workspaces.tags.get({ path });
       return resp.data;
     }, "gtm_get_tag");
   }
 
-  async updateTag(tagId: string, updatesJson: string): Promise<any> {
+  async updateTag(tagId: unknown, updatesJson: string): Promise<any> {
+    const id = gtmId("tag", tagId);
     const svc = this.getGtmService();
-    const path = `${await this.getWorkspacePath()}/tags/${tagId}`;
+    const path = `${await this.getWorkspacePath()}/tags/${id}`;
     return withResilience(async () => {
       const current = (await svc.accounts.containers.workspaces.tags.get({ path })).data;
       const updates = JSON.parse(updatesJson);
@@ -401,7 +417,7 @@ class GtmGa4Manager {
     const wp = await this.getWorkspacePath();
     return withResilience(async () => {
       const body = JSON.parse(tagJson);
-      const resp = await svc.accounts.containers.workspaces.tags.create({ parent: wp, requestBody: body });
+      const resp = await svc.accounts.containers.workspaces.tags.create({ parent: wp, requestBody: body }, NO_LIBRARY_RETRY);
       return { created: resp.data.name, tagId: resp.data.tagId };
     }, "gtm_create_tag", { idempotent: false });
   }
@@ -426,18 +442,20 @@ class GtmGa4Manager {
     }, "gtm_list_variables");
   }
 
-  async getVariable(variableId: string): Promise<any> {
+  async getVariable(variableId: unknown): Promise<any> {
+    const id = gtmId("variable", variableId);
     const svc = this.getGtmService();
-    const path = `${await this.getWorkspacePath()}/variables/${variableId}`;
+    const path = `${await this.getWorkspacePath()}/variables/${id}`;
     return withResilience(async () => {
       const resp = await svc.accounts.containers.workspaces.variables.get({ path });
       return resp.data;
     }, "gtm_get_variable");
   }
 
-  async updateVariable(variableId: string, updatesJson: string): Promise<any> {
+  async updateVariable(variableId: unknown, updatesJson: string): Promise<any> {
+    const id = gtmId("variable", variableId);
     const svc = this.getGtmService();
-    const path = `${await this.getWorkspacePath()}/variables/${variableId}`;
+    const path = `${await this.getWorkspacePath()}/variables/${id}`;
     return withResilience(async () => {
       const current = (await svc.accounts.containers.workspaces.variables.get({ path })).data;
       const updates = JSON.parse(updatesJson);
@@ -454,18 +472,21 @@ class GtmGa4Manager {
     const wp = await this.getWorkspacePath();
     return withResilience(async () => {
       const body = JSON.parse(variableJson);
-      const resp = await svc.accounts.containers.workspaces.variables.create({ parent: wp, requestBody: body });
+      const resp = await svc.accounts.containers.workspaces.variables.create({ parent: wp, requestBody: body }, NO_LIBRARY_RETRY);
       return { created: resp.data.name, variableId: resp.data.variableId };
     }, "gtm_create_variable", { idempotent: false });
   }
 
-  async deleteVariable(variableId: string): Promise<any> {
+  // Sent once, like the creates: a delete retried after Google already removed
+  // the variable comes back 404, an error that hides the success.
+  async deleteVariable(variableId: unknown): Promise<any> {
+    const id = gtmId("variable", variableId);
     const svc = this.getGtmService();
-    const path = `${await this.getWorkspacePath()}/variables/${variableId}`;
+    const path = `${await this.getWorkspacePath()}/variables/${id}`;
     return withResilience(async () => {
-      await svc.accounts.containers.workspaces.variables.delete({ path });
-      return { deleted: variableId };
-    }, "gtm_delete_variable");
+      await svc.accounts.containers.workspaces.variables.delete({ path }, NO_LIBRARY_RETRY);
+      return { deleted: id };
+    }, "gtm_delete_variable", { idempotent: false });
   }
 
   async auditConsent(): Promise<any> {
@@ -514,7 +535,7 @@ class GtmGa4Manager {
     return withResilience(async () => {
       const resp = await svc.accounts.containers.workspaces.create_version({
         path: wp, requestBody: { name, notes: notes || "" },
-      });
+      }, NO_LIBRARY_RETRY);
       const v = resp.data.containerVersion || {};
       return { versionId: v.containerVersionId, name: v.name, path: v.path };
     }, "gtm_create_version", { idempotent: false });
@@ -580,10 +601,12 @@ class GtmGa4Manager {
   async ga4CreateCustomDimension(opts: { parameterName: string; displayName: string; scope?: string; description?: string }): Promise<any> {
     const client = this.getAdminClient();
     return withResilience(async () => {
+      // gax retries CreateCustomDimension on UNKNOWN and UNAVAILABLE by
+      // default; retry: null turns that off so the create goes out once.
       const [result] = await client.createCustomDimension({
         parent: `properties/${GA4_PROPERTY_ID}`,
         customDimension: { parameterName: opts.parameterName, displayName: opts.displayName, scope: (opts.scope?.toUpperCase() === "USER" ? "USER" : "EVENT") as any, description: opts.description || "" },
-      });
+      }, { retry: null });
       return { created: (result as any).displayName, parameter_name: (result as any).parameterName, scope: String((result as any).scope) };
     }, "ga4_create_custom_dimension", { idempotent: false });
   }
@@ -615,15 +638,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         status: "healthy",
       });
       case "gtm_list_tags": return ok(await manager.listTags());
-      case "gtm_get_tag": return ok(await manager.getTag(args?.tag_id as string));
-      case "gtm_update_tag": return ok(await manager.updateTag(args?.tag_id as string, args?.updates_json as string));
+      case "gtm_get_tag": return ok(await manager.getTag(args?.tag_id));
+      case "gtm_update_tag": return ok(await manager.updateTag(args?.tag_id, args?.updates_json as string));
       case "gtm_create_tag": return ok(await manager.createTag(args?.tag_json as string));
       case "gtm_list_triggers": return ok(await manager.listTriggers());
       case "gtm_list_variables": return ok(await manager.listVariables());
-      case "gtm_get_variable": return ok(await manager.getVariable(args?.variable_id as string));
-      case "gtm_update_variable": return ok(await manager.updateVariable(args?.variable_id as string, args?.updates_json as string));
+      case "gtm_get_variable": return ok(await manager.getVariable(args?.variable_id));
+      case "gtm_update_variable": return ok(await manager.updateVariable(args?.variable_id, args?.updates_json as string));
       case "gtm_create_variable": return ok(await manager.createVariable(args?.variable_json as string));
-      case "gtm_delete_variable": return ok(await manager.deleteVariable(args?.variable_id as string));
+      case "gtm_delete_variable": return ok(await manager.deleteVariable(args?.variable_id));
       case "gtm_audit_consent": return ok(await manager.auditConsent());
       case "gtm_preview": return ok(await manager.preview());
       case "gtm_create_version": return ok(await manager.createVersion(args?.name as string, args?.notes as string));
