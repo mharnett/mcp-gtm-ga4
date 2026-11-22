@@ -8,7 +8,9 @@
  * here:
  *
  * - googleapis turns gaxios retry on by default, and gaxios resends a DELETE
- *   on a 503 (three retries) but not a POST. `{ retry: false }` stops it.
+ *   or a PUT on a 503 (three retries) but not a POST. `{ retry: false }`
+ *   stops it. The PUT resend carries the same fingerprint as the first send,
+ *   so after a stored PUT it can only fail on a fingerprint mismatch.
  * - google-gax's CallSettings.merge drops the configured retry when a call
  *   passes `{ retry: null }`. The GA4 Admin client config retries
  *   CreateCustomDimension on UNKNOWN and UNAVAILABLE, so without it a create
@@ -30,9 +32,10 @@ import { google } from "googleapis";
 import { CallSettings, createBackoffSettings, createRetryOptions } from "google-gax";
 
 function unavailable() {
-  const seen: Array<{ method: string; url: string }> = [];
+  const seen: Array<{ method: string; url: string; fingerprint: string | null }> = [];
   const adapter = async (opts: any) => {
-    seen.push({ method: String(opts.method), url: String(opts.url) });
+    const url = String(opts.url);
+    seen.push({ method: String(opts.method), url, fingerprint: new URL(url).searchParams.get("fingerprint") });
     return { status: 503, statusText: "Service Unavailable", data: { error: { code: 503, message: "Backend Error" } }, headers: {}, config: opts };
   };
   return { seen, adapter };
@@ -55,6 +58,24 @@ describe("googleapis / gaxios", () => {
     const { seen, adapter } = unavailable();
     await expect(variables.delete({ path: VAR_PATH }, { adapter, retry: false } as any)).rejects.toThrow(/Backend Error/);
     expect(seen.map((s) => s.method)).toEqual(["DELETE"]);
+  });
+
+  it("resends a PUT (an update) on a 503 by default, with the fingerprint it already sent", async () => {
+    const { seen, adapter } = unavailable();
+    await expect(
+      variables.update({ path: VAR_PATH, fingerprint: "fp-sent", requestBody: { name: "v" } }, { adapter } as any),
+    ).rejects.toThrow(/Backend Error/);
+    expect(seen.map((s) => s.method)).toEqual(["PUT", "PUT", "PUT", "PUT"]);
+    expect(seen.map((s) => s.fingerprint)).toEqual(["fp-sent", "fp-sent", "fp-sent", "fp-sent"]);
+  }, 20_000);
+
+  it("sends a PUT once with { retry: false }", async () => {
+    const { seen, adapter } = unavailable();
+    await expect(
+      variables.update({ path: VAR_PATH, fingerprint: "fp-sent", requestBody: { name: "v" } }, { adapter, retry: false } as any),
+    ).rejects.toThrow(/Backend Error/);
+    expect(seen.map((s) => s.method)).toEqual(["PUT"]);
+    expect(seen[0].url).toContain(`/tagmanager/v2/${VAR_PATH}`);
   });
 
   it("sends a POST (a create) once even by default", async () => {
