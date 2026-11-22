@@ -298,9 +298,12 @@ const CREDS_FILE = isAbsolute(__rawCredsFile) ? __rawCredsFile : resolve(__rawCr
 // ============================================
 
 // googleapis turns gaxios retry on for every call, and gaxios resends GET,
-// PUT and DELETE (not POST) on a 5xx, 408 or 429 up to three times. Writes
-// that must go out once (the creates and the delete) pass this so the library
-// does not resend them underneath withResilience({ idempotent: false }).
+// PUT and DELETE (not POST) on a 5xx, 408 or 429 up to three times. Every
+// write passes this so the library sends it once. Creates and the delete go
+// out once in all (withResilience({ idempotent: false })). Updates still retry
+// in withResilience, which re-reads the tag or variable first, so each PUT
+// carries the fingerprint just read; a library resend would replay the one the
+// first PUT used and, if that PUT was stored, fail on the mismatch.
 const NO_LIBRARY_RETRY = { retry: false } as const;
 
 class GtmGa4Manager {
@@ -407,7 +410,7 @@ class GtmGa4Manager {
       const merged = { ...current, ...updates };
       const resp = await svc.accounts.containers.workspaces.tags.update({
         path, requestBody: merged, fingerprint: current.fingerprint!,
-      });
+      }, NO_LIBRARY_RETRY);
       return { updated: resp.data.name, tagId: resp.data.tagId };
     }, "gtm_update_tag");
   }
@@ -462,7 +465,7 @@ class GtmGa4Manager {
       const merged = { ...current, ...updates };
       const resp = await svc.accounts.containers.workspaces.variables.update({
         path, requestBody: merged, fingerprint: current.fingerprint!,
-      });
+      }, NO_LIBRARY_RETRY);
       return { updated: resp.data.name, variableId: resp.data.variableId };
     }, "gtm_update_variable");
   }
